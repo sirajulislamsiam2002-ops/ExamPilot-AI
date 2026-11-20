@@ -41,7 +41,9 @@ function App(){
    setOutput(result);notify("A starter draft has been created.");
  };
  const sendPrompt=(text)=>{setQuery(text);setActive("genie")};
- const askAI=()=>{if(!query.trim())return;setOutput(`Your question: ${query}\n\nAcademia AI workspace is ready. Live AI responses will become available after a secure server-side AI provider is connected. For now, use the Exam, Assignment and Presentation studios to create editable starter drafts.`);setQuery("")};
+ const askAI=async()=>{if(!query.trim())return;const question=query;setBusy(true);setOutput("");try{const result=await askAcademiaAI([{role:"user",content:question}],"ai");setOutput(result.answer||"No response was returned.");setQuery("");}catch(err){setOutput(err.message||"AI service is not configured yet.");}finally{setBusy(false);}};
+ const handleDocument=async(file)=>{if(!file)return;setBusy(true);try{const text=await extractDocumentText(file);setTopic(file.name);setOutput("IMPORTED DOCUMENT: "+file.name+"\\n\\n"+text);if(isSupabaseConfigured){await uploadPrivateDocument(file);notify("Document extracted and uploaded to your private cloud storage.");}else notify("Document text extracted. Connect your account to enable private cloud storage.");}catch(err){notify(err.message||"Could not read this document.");}finally{setBusy(false);}};
+ const exportCurrent=async(kind)=>{try{if(kind==="pdf")await exportPdf(topic||current.label,output);else if(kind==="docx")await exportDocx(topic||current.label,output);else await exportPptx(topic||current.label,output);notify(kind.toUpperCase()+" export started.");}catch(err){notify(err.message||"Export failed.");}};
  return <div className="app-shell">
   <aside className="sidebar">
    <div className="brand"><div className="brand-mark">A</div><div><strong>Academia Studio</strong><small>Created & Developed By Sirajul Islam</small></div></div>
