@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import StudentExam from "./StudentExam";
+import TeacherGrading from "./TeacherGrading";
 
 export default function ClassroomStudio({ onNotify }) {
   const [user,setUser]=useState(null);
@@ -156,6 +157,7 @@ export default function ClassroomStudio({ onNotify }) {
               <button className="primary-btn">＋ Add question</button>
             </form>
           </div>}
+          {isTeacher&&selectedExamId&&<TeacherGrading exam={exams.find(x=>x.id===selectedExamId)} onNotify={onNotify}/>}
         </>}
       </section>
     </div>
