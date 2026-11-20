@@ -42,8 +42,11 @@ export default function ClassroomStudio({ onNotify }) {
     if(!selected){setMembers([]);setExams([]);return;}
     const run=async()=>{
       if(isTeacher){
-        const {data}=await supabase.from("classroom_members").select("id,status,joined_at,student_id,profiles:student_id(display_name)").eq("classroom_id",selected).order("joined_at",{ascending:false});
-        setMembers(data||[]);
+        const {data}=await supabase.from("classroom_members").select("id,status,joined_at,student_id").eq("classroom_id",selected).order("joined_at",{ascending:false});
+        const ids=(data||[]).map(m=>m.student_id);
+        const {data:people}=ids.length?await supabase.from("profiles").select("id,display_name").in("id",ids):{data:[]};
+        const names=new Map((people||[]).map(p=>[p.id,p.display_name]));
+        setMembers((data||[]).map(m=>({...m,display_name:names.get(m.student_id)||"Student"})));
       }
       const {data}=await supabase.from("classroom_exams").select("id,title,status,starts_at,ends_at,duration_minutes,created_at").eq("classroom_id",selected).order("created_at",{ascending:false});
       setExams(data||[]);
@@ -119,7 +122,7 @@ export default function ClassroomStudio({ onNotify }) {
           {(()=>{const c=classrooms.find(x=>x.id===selected);if(!c)return null;return <div className="classroom-detail-head"><div><div className="eyebrow">CLASSROOM</div><h2>{c.name}</h2><p>{c.description||"No description provided."}</p></div>{isTeacher&&<button className="save-btn" onClick={()=>shareInvite(c)}>Copy invitation link</button>}</div>})()}
           {isTeacher&&<div className="class-code-card"><small>CLASSROOM CODE</small><strong>{classrooms.find(c=>c.id===selected)?.classroom_code}</strong><span>Share this code or the invitation link with your students.</span></div>}
           {invite&&<div className="invite-output"><small>Invitation link</small><code>{invite}</code><button className="text-link" onClick={()=>navigator.clipboard?.writeText(invite)}>Copy link</button></div>}
-          {isTeacher&&<><div className="classroom-list-head"><h3>Student requests & members</h3><span>{members.length}</span></div>{members.length===0?<p className="muted">No students have joined yet.</p>:members.map(m=><div className="member-row" key={m.id}><div><b>{m.profiles?.display_name||"Student"}</b><small>{m.status}</small></div>{m.status==="pending"&&<div className="member-actions"><button onClick={()=>reviewMember(m.id,"approved")}>Approve</button><button onClick={()=>reviewMember(m.id,"rejected")}>Reject</button></div>}</div>)}
+          {isTeacher&&<><div className="classroom-list-head"><h3>Student requests & members</h3><span>{members.length}</span></div>{members.length===0?<p className="muted">No students have joined yet.</p>:members.map(m=><div className="member-row" key={m.id}><div><b>{m.display_name||"Student"}</b><small>{m.status}</small></div>{m.status==="pending"&&<div className="member-actions"><button onClick={()=>reviewMember(m.id,"approved")}>Approve</button><button onClick={()=>reviewMember(m.id,"rejected")}>Reject</button></div>}</div>)}
           <form className="create-exam-form" onSubmit={createExam}><h3>Create an exam</h3><label>Exam title<input value={examTitle} onChange={e=>setExamTitle(e.target.value)} placeholder="e.g. Cell Biology Midterm" required/></label><label>Duration (minutes)<input type="number" min="1" max="360" value={duration} onChange={e=>setDuration(e.target.value)}/></label><button className="primary-btn">＋ Create exam draft</button></form></>}
           <div className="classroom-list-head"><h3>{isTeacher?"Classroom exams":"Available exams"}</h3><span>{exams.length}</span></div>
           {exams.length===0?<p className="muted">No exams have been added yet.</p>:exams.map(exam=><div className="exam-row" key={exam.id}><div><b>{exam.title}</b><small>{exam.duration_minutes} min · {exam.status}</small></div>{isTeacher&&exam.status==="draft"&&<button onClick={()=>publishExam(exam)}>Publish</button>}{!isTeacher&&exam.status==="published"&&<span className="exam-ready">Available</span>}</div>)}
