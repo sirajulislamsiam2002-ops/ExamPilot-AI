@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "ExamPilot AI",
+    "slug": "exampilot-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.sirajulislam.exampilotai",
+      "versionCode": 1
+    }
+  }
+}
