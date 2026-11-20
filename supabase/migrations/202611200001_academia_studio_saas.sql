@@ -70,6 +70,7 @@ create policy "projects_delete_own" on public.projects for delete using (auth.ui
 
 create policy "subscriptions_select_own" on public.subscriptions for select using (auth.uid() = user_id);
 create policy "usage_select_own" on public.usage_events for select using (auth.uid() = user_id);
+create policy "usage_insert_own" on public.usage_events for insert with check (auth.uid() = user_id);
 
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public
