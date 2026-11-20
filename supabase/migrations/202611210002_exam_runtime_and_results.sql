@@ -6,6 +6,22 @@ alter table public.exam_attempts
   add column if not exists feedback text,
   add column if not exists evaluated_at timestamptz;
 
+create or replace function public.calculate_exam_auto_score(p_exam_id uuid,p_answers jsonb)
+returns numeric
+language sql
+stable
+security definer
+set search_path = public
+as $
+  select coalesce(sum(q.marks),0)
+  from public.exam_questions q
+  join public.exam_answer_keys k on k.question_id=q.id
+  join lateral (select p_answers->q.id::text as answer) a on true
+  where q.exam_id=p_exam_id and q.question_type='mcq'
+    and lower(trim(coalesce(a.answer->>'answer','')))=lower(trim(coalesce(k.answer_key->>'answer','')));
+$;
+revoke all on function public.calculate_exam_auto_score(uuid,jsonb) from public;
+
 create or replace function public.start_exam_attempt(p_exam_id uuid)
 returns jsonb
 language plpgsql
@@ -44,7 +60,8 @@ begin
   if now()>v_attempt.started_at+make_interval(mins=>v_exam.duration_minutes)
      or (v_exam.ends_at is not null and now()>v_exam.ends_at) then
     update public.exam_attempts set status='submitted',submitted_at=now(),
-      answers=v_attempt.answers,auto_score=0,score=0,
+      answers=v_attempt.answers,auto_score=public.calculate_exam_auto_score(p_exam_id,v_attempt.answers),
+      score=public.calculate_exam_auto_score(p_exam_id,v_attempt.answers),
       total_marks=(select coalesce(sum(q.marks),0) from public.exam_questions q where q.exam_id=p_exam_id)
     where id=v_attempt.id returning * into v_attempt;
   end if;
@@ -73,7 +90,8 @@ begin
   if now()>v_attempt.started_at+make_interval(mins=>v_exam.duration_minutes)
      or (v_exam.ends_at is not null and now()>v_exam.ends_at) then
     update public.exam_attempts set status='submitted',submitted_at=now(),
-      auto_score=0,score=0,
+      auto_score=public.calculate_exam_auto_score(v_exam.id,v_attempt.answers),
+      score=public.calculate_exam_auto_score(v_exam.id,v_attempt.answers),
       total_marks=(select coalesce(sum(q.marks),0) from public.exam_questions q where q.exam_id=v_exam.id)
     where id=v_attempt.id returning * into v_attempt;
     return jsonb_build_object('status',v_attempt.status,'submitted_at',v_attempt.submitted_at);
@@ -105,12 +123,7 @@ begin
   select * into v_exam from public.classroom_exams where id=v_attempt.exam_id;
   select coalesce(sum(q.marks),0) into v_total
   from public.exam_questions q where q.exam_id=v_exam.id;
-  select coalesce(sum(q.marks),0) into v_auto
-  from public.exam_questions q
-  join public.exam_answer_keys k on k.question_id=q.id
-  join lateral (select v_attempt.answers->q.id::text as answer) a on true
-  where q.exam_id=v_exam.id and q.question_type='mcq'
-    and lower(trim(coalesce(a.answer->>'answer','')))=lower(trim(coalesce(k.answer_key->>'answer','')));
+  v_auto:=public.calculate_exam_auto_score(v_exam.id,v_attempt.answers);
   update public.exam_attempts set status='submitted',submitted_at=now(),
     auto_score=v_auto,score=v_auto,total_marks=v_total
   where id=v_attempt.id returning * into v_attempt;
