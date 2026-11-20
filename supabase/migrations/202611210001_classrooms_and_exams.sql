@@ -33,12 +33,42 @@ create table if not exists public.classrooms (
   name text not null check (char_length(name) between 2 and 120),
   description text not null default '',
   classroom_code text not null unique default upper(encode(gen_random_bytes(5),'hex')),
-  invite_token text not null unique default encode(gen_random_bytes(20),'hex'),
   approval_required boolean not null default true,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create table if not exists public.classroom_invites (
+  classroom_id uuid primary key references public.classrooms(id) on delete cascade,
+  invite_token text not null unique default encode(gen_random_bytes(20),'hex'),
+  created_at timestamptz not null default now()
+);
+alter table public.classroom_invites enable row level security;
+create policy classroom_invite_teacher_read on public.classroom_invites for select
+using (exists (select 1 from public.classrooms c where c.id = classroom_id and c.teacher_id = auth.uid()) or public.is_admin());
+
+create or replace function public.create_classroom_invite()
+returns trigger language plpgsql security definer set search_path = public
+as $ begin insert into public.classroom_invites(classroom_id) values(new.id); return new; end; $;
+drop trigger if exists classroom_invite_on_create on public.classrooms;
+create trigger classroom_invite_on_create after insert on public.classrooms
+for each row execute function public.create_classroom_invite();
+
+create or replace function public.get_classroom_invite(p_classroom_id uuid)
+returns text language plpgsql security definer set search_path = public
+as $
+declare v_token text;
+begin
+  select i.invite_token into v_token
+  from public.classroom_invites i join public.classrooms c on c.id=i.classroom_id
+  where c.id=p_classroom_id and (c.teacher_id=auth.uid() or public.is_admin());
+  if v_token is null then raise exception 'Classroom not found or access denied'; end if;
+  return v_token;
+end;
+$;
+revoke all on function public.get_classroom_invite(uuid) from public;
+grant execute on function public.get_classroom_invite(uuid) to authenticated;
 
 create table if not exists public.classroom_members (
   id uuid primary key default gen_random_uuid(),
@@ -140,7 +170,7 @@ begin
   select * into v_classroom from public.classrooms c
     where c.is_active and (
       (p_code is not null and upper(c.classroom_code) = upper(trim(p_code))) or
-      (p_invite_token is not null and c.invite_token = trim(p_invite_token))
+      (p_invite_token is not null and exists (select 1 from public.classroom_invites i where i.classroom_id=c.id and i.invite_token=trim(p_invite_token)))
     ) limit 1;
   if v_classroom.id is null then raise exception 'Classroom code or invitation link is invalid'; end if;
   v_status := case when v_classroom.approval_required then 'pending' else 'approved' end;
