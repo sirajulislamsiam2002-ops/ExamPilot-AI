@@ -27,7 +27,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = public
-as $$$
+as $$
 declare
   v_exam public.classroom_exams%rowtype;
   v_attempt public.exam_attempts%rowtype;
@@ -71,14 +71,14 @@ begin
     'submitted_at',v_attempt.submitted_at,'score',v_attempt.score,
     'total_marks',v_attempt.total_marks,'feedback',v_attempt.feedback);
 end;
-$$$;
+$$;
 
 create or replace function public.save_exam_attempt(p_attempt_id uuid,p_answers jsonb)
 returns jsonb
 language plpgsql
 security definer
 set search_path = public
-as $$$
+as $$
 declare
   v_attempt public.exam_attempts%rowtype;
   v_exam public.classroom_exams%rowtype;
@@ -102,14 +102,14 @@ begin
   update public.exam_attempts set answers=p_answers where id=v_attempt.id returning * into v_attempt;
   return jsonb_build_object('status',v_attempt.status,'saved_at',now());
 end;
-$$$;
+$$;
 
 create or replace function public.submit_exam_attempt(p_attempt_id uuid)
 returns jsonb
 language plpgsql
 security definer
 set search_path = public
-as $$$
+as $$
 declare
   v_attempt public.exam_attempts%rowtype;
   v_exam public.classroom_exams%rowtype;
@@ -133,7 +133,7 @@ begin
   return jsonb_build_object('status',v_attempt.status,'score',v_attempt.score,
     'total_marks',v_attempt.total_marks,'submitted_at',v_attempt.submitted_at);
 end;
-$$$;
+$$;
 
 create or replace function public.evaluate_exam_attempt(
   p_attempt_id uuid,p_manual_score numeric,p_feedback text default ''
@@ -142,7 +142,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = public
-as $$$
+as $$
 declare
   v_attempt public.exam_attempts%rowtype;
   v_exam public.classroom_exams%rowtype;
@@ -170,7 +170,7 @@ begin
   return jsonb_build_object('status',v_attempt.status,'score',v_attempt.score,
     'total_marks',v_attempt.total_marks,'feedback',v_attempt.feedback);
 end;
-$$$;
+$$;
 
 revoke all on function public.start_exam_attempt(uuid) from public;
 revoke all on function public.save_exam_attempt(uuid,jsonb) from public;
