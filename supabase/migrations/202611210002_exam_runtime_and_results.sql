@@ -90,6 +90,7 @@ begin
   select * into v_exam from public.classroom_exams where id=v_attempt.exam_id;
   if now()>v_attempt.started_at+make_interval(mins=>v_exam.duration_minutes)
      or (v_exam.ends_at is not null and now()>v_exam.ends_at) then
+    perform set_config('app.exam_rpc','true',true);
     update public.exam_attempts set status='submitted',submitted_at=now(),
       auto_score=public.calculate_exam_auto_score(v_exam.id,v_attempt.answers),
       score=public.calculate_exam_auto_score(v_exam.id,v_attempt.answers),
