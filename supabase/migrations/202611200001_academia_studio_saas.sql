@@ -4,6 +4,7 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   display_name text,
   avatar_url text,
+  role text not null default 'student' check (role in ('student','admin')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -98,3 +99,25 @@ create policy "documents_insert_own" on storage.objects for insert
 with check (bucket_id = 'user-documents' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "documents_delete_own" on storage.objects for delete
 using (bucket_id = 'user-documents' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create table if not exists public.audit_logs (
+  id bigint generated always as identity primary key,
+  actor_id uuid references auth.users(id) on delete set null,
+  action text not null,
+  target_type text,
+  target_id text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+alter table public.audit_logs enable row level security;
+
+create or replace function public.is_admin()
+returns boolean language sql stable security definer set search_path = public
+as $$ select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'); $$;
+
+create policy "admin_read_profiles" on public.profiles for select using (public.is_admin());
+create policy "admin_read_library" on public.library_items for select using (public.is_admin());
+create policy "admin_read_projects" on public.projects for select using (public.is_admin());
+create policy "admin_read_subscriptions" on public.subscriptions for select using (public.is_admin());
+create policy "admin_read_usage" on public.usage_events for select using (public.is_admin());
+create policy "admin_read_audit_logs" on public.audit_logs for select using (public.is_admin());
