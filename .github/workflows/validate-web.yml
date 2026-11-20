@@ -1,12 +1,12 @@
 name: Validate Academia Studio Web
 on:
   push:
-    branches: [feature/full-saas-web]
+    branches: [feature/full-saas-web, feature/assignment-studio-workflow]
     paths:
       - "web/**"
       - ".github/workflows/validate-web.yml"
   pull_request:
-    branches: [main]
+    branches: [main, feature/full-saas-web]
     paths:
       - "web/**"
       - ".github/workflows/validate-web.yml"
