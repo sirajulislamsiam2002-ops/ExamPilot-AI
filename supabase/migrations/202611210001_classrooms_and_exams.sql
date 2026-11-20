@@ -15,14 +15,14 @@ create policy profiles_admin_update on public.profiles for update
 
 create or replace function public.prevent_self_role_change()
 returns trigger language plpgsql security definer set search_path = public
-as $$
+as $$$
 begin
   if new.role is distinct from old.role and not public.is_admin() then
     raise exception 'Only an administrator can change account roles';
   end if;
   return new;
 end;
-$$;
+$$$;
 drop trigger if exists profiles_role_guard on public.profiles;
 create trigger profiles_role_guard before update on public.profiles
 for each row execute function public.prevent_self_role_change();
@@ -50,14 +50,14 @@ using (exists (select 1 from public.classrooms c where c.id = classroom_id and c
 
 create or replace function public.create_classroom_invite()
 returns trigger language plpgsql security definer set search_path = public
-as $ begin insert into public.classroom_invites(classroom_id) values(new.id); return new; end; $;
+as $$ begin insert into public.classroom_invites(classroom_id) values(new.id); return new; end; $$;
 drop trigger if exists classroom_invite_on_create on public.classrooms;
 create trigger classroom_invite_on_create after insert on public.classrooms
 for each row execute function public.create_classroom_invite();
 
 create or replace function public.get_classroom_invite(p_classroom_id uuid)
 returns text language plpgsql security definer set search_path = public
-as $$
+as $$$
 declare v_token text;
 begin
   select i.invite_token into v_token
@@ -66,7 +66,7 @@ begin
   if v_token is null then raise exception 'Classroom not found or access denied'; end if;
   return v_token;
 end;
-$$;
+$$$;
 revoke all on function public.get_classroom_invite(uuid) from public;
 grant execute on function public.get_classroom_invite(uuid) to authenticated;
 
@@ -178,7 +178,7 @@ using (student_id = auth.uid() or exists (
 create or replace function public.join_classroom(p_code text default null, p_invite_token text default null)
 returns table(classroom_id uuid, classroom_name text, membership_status text)
 language plpgsql security definer set search_path = public
-as $$
+as $$$
 declare
   v_classroom public.classrooms%rowtype;
   v_status text;
@@ -201,7 +201,7 @@ begin
     returning status into v_status;
   return query select v_classroom.id,v_classroom.name,v_status;
 end;
-$$;
+$$$;
 revoke all on function public.join_classroom(text,text) from public;
 grant execute on function public.join_classroom(text,text) to authenticated;
 
@@ -265,7 +265,7 @@ create index if not exists exam_attempt_student_idx on public.exam_attempts(stud
 -- Prevent students from changing grades or modifying an attempt after submission.
 create or replace function public.guard_exam_attempt_updates()
 returns trigger language plpgsql security definer set search_path = public
-as $$
+as $$$
 begin
   if auth.uid() = old.student_id and not public.is_admin() then
     if new.student_id is distinct from old.student_id
@@ -286,7 +286,7 @@ begin
   end if;
   return new;
 end;
-$$;
+$$$;
 drop trigger if exists exam_attempt_update_guard on public.exam_attempts;
 create trigger exam_attempt_update_guard before update on public.exam_attempts
 for each row execute function public.guard_exam_attempt_updates();
@@ -294,7 +294,7 @@ for each row execute function public.guard_exam_attempt_updates();
 -- Server-side attempt start and deadline enforcement.
 create or replace function public.guard_exam_attempt_insert()
 returns trigger language plpgsql security definer set search_path = public
-as $$
+as $$$
 declare v_exam public.classroom_exams%rowtype;
 begin
   select * into v_exam from public.classroom_exams where id=new.exam_id;
@@ -308,14 +308,14 @@ begin
   new.total_marks := null;
   return new;
 end;
-$$;
+$$$;
 drop trigger if exists exam_attempt_start_guard on public.exam_attempts;
 create trigger exam_attempt_start_guard before insert on public.exam_attempts
 for each row execute function public.guard_exam_attempt_insert();
 
 create or replace function public.guard_exam_attempt_updates()
 returns trigger language plpgsql security definer set search_path = public
-as $
+as $$
 declare v_exam public.classroom_exams%rowtype;
 begin
   -- Only the trusted SECURITY DEFINER RPCs set this transaction-local flag.
@@ -340,4 +340,4 @@ begin
   end if;
   return new;
 end;
-$$;
+$$$;
