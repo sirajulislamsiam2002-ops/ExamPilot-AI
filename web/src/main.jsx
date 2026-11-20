@@ -27,8 +27,9 @@ function App(){
  const [busy,setBusy]=useState(false);
  const current=modules.find(m=>m.id===active);
  const savedCount=library.length;
+ React.useEffect(()=>{if(!isSupabaseConfigured)return;supabase.from("library_items").select("*").order("created_at",{ascending:false}).then(({data,error})=>{if(!error&&data){const cloud=data.map(x=>({id:x.id,title:x.title,kind:x.workspace,content:x.content,date:new Date(x.created_at).toLocaleDateString()}));setLibrary(cloud);localStorage.setItem("academia-library",JSON.stringify(cloud));}});},[]);
  const notify=(msg)=>{setToast(msg);window.setTimeout(()=>setToast(""),2600)};
- const save=()=>{if(!output.trim())return;const next=[{id:Date.now(),title:topic||current.label,kind:current.label,content:output,date:new Date().toLocaleDateString()},...library];setLibrary(next);localStorage.setItem("academia-library",JSON.stringify(next));notify("Saved to My Library on this device.")};
+ const save=async()=>{if(!output.trim())return;const title=topic||current.label;const workspace=active==="exams"?"exam":active==="assignments"?"assignment":active==="presentations"?"presentation":active==="genie"?"ai":"general";const item={id:Date.now(),title,kind:current.label,content:output,date:new Date().toLocaleDateString()};const next=[item,...library];setLibrary(next);localStorage.setItem("academia-library",JSON.stringify(next));if(isSupabaseConfigured){const {error}=await supabase.from("library_items").insert({title,workspace,content:output});if(error){notify("Saved locally, but cloud sync failed: "+error.message);return;}notify("Saved to your cloud library.");}else notify("Saved to My Library on this device.")};
  const generate=()=>{
    const subject=topic.trim()||"your selected topic";
    const result=active==="exams"
