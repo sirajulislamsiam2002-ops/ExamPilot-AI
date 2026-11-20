@@ -1,37 +1,33 @@
-# ExamPilot AI
+# Academia Studio
 **Created & Developed By Sirajul Islam**
 
-A React Native + Expo + TypeScript MVP for academic productivity.
+Your Academic World, Powered by AI.
 
-## MVP screens
-- Dashboard with study overview, progress and upcoming exam
-- Student Portal
-- Teacher Portal
-- ExamGenie chat interface
-- English / বাংলা language toggle
-- Navy, white, purple and light-grey visual system
+Academia Studio is being developed as a website-first academic productivity SaaS platform. The new web application lives in `web/`; the existing Expo/Android project remains in the repository and is not replaced.
 
-> ExamGenie is currently a UI demo. Live AI answers require a secure backend and an AI API connection. Do not put API keys in the mobile app.
+## Website preview
 
-## Run locally
+See [web/README.md](web/README.md) for setup and current capabilities.
+
 ```bash
+cd web
 npm install
-npx expo start
+npm run dev
 ```
 
-## Build an Android APK
-The `preview` EAS profile is configured to produce an installable APK.
+## Planned SaaS capabilities
 
-1. Create an Expo access token at https://expo.dev/settings/access-tokens
-2. In GitHub, open Settings → Secrets and variables → Actions → New repository secret.
-3. Name the secret `EXPO_TOKEN` and paste the token as its value.
-4. Open Actions → **Build Android APK** → Run workflow. Select `exam-pilot-mvp` if prompted.
-5. Wait for the EAS build link in the workflow log, then download the APK from the Expo build page.
+- Dashboard and six academic workspaces
+- Academia AI assistant
+- Exam Center
+- Assignment Studio
+- Presentation Studio
+- My Library
+- Secure accounts, cloud sync and file workflows
+- Subscription plans and administration
 
-The workflow links this project to Expo automatically before starting the build.
+## Current implementation status
 
-## Build profiles
-- `preview`: Android APK for direct installation/testing
-- `production`: Android App Bundle (AAB) for Google Play
+The web workspace currently provides responsive navigation, interactive workspace screens, local starter-draft generation and browser-local library storage. Live AI, user authentication, cloud database, document processing and billing are not connected yet; these require secure server-side services and deployment configuration.
 
-This is an MVP starter. No real student accounts, server database, teacher/student authentication, or live AI backend are connected yet.
+The Expo/Android application remains available as a separate project surface. Do not put private AI or payment keys in client-side code.
