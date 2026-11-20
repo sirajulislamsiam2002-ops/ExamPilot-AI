@@ -20,16 +20,24 @@ export default function NotesStudio({onNotify}){
   if(isSupabaseConfigured){setBusy(true);const {data,error}=await supabase.from("student_notes").insert({title:draft.title,content:""}).select().single();setBusy(false);if(error){onNotify?.(error.message);return;}draft.id=data.id;draft.created_at=data.created_at;draft.updated_at=data.updated_at;}
   persistLocal([draft,...notes]);setActive(draft.id);
  };
- const update=async(id,patch)=>{
+ const update=(id,patch)=>{
   const current=notes.find(n=>n.id===id);if(!current)return;
   const next={...current,...patch,updated_at:new Date().toISOString()};
   persistLocal(notes.map(n=>n.id===id?next:n));
-  if(isSupabaseConfigured){
-   const payload={};for(const key of ["title","content","labels","pinned","archived"])if(key in patch)payload[key]=patch[key];
-   const {error}=await supabase.from("student_notes").update({...payload,updated_at:next.updated_at}).eq("id",id);
-   if(error)setSyncLabel("Local backup · sync error");else setSyncLabel("All changes saved");
-  }
+  if(isSupabaseConfigured)setSyncLabel("Saving changes…");
  };
+ useEffect(()=>{
+  if(!selected||!isSupabaseConfigured)return;
+  const timer=setTimeout(async()=>{
+   const {error}=await supabase.from("student_notes").update({
+    title:selected.title||"Untitled note",content:selected.content||"",
+    labels:selected.labels||[],pinned:Boolean(selected.pinned),archived:Boolean(selected.archived),
+    updated_at:selected.updated_at||new Date().toISOString()
+   }).eq("id",selected.id);
+   setSyncLabel(error?"Local backup · cloud sync error":"All changes saved");
+  },750);
+  return()=>clearTimeout(timer);
+ },[selected?.id,selected?.title,selected?.content,JSON.stringify(selected?.labels||[]),selected?.pinned,selected?.archived]);
  const remove=async(id)=>{
   if(!window.confirm("Delete this note permanently?"))return;
   if(isSupabaseConfigured){const {error}=await supabase.from("student_notes").delete().eq("id",id);if(error){onNotify?.(error.message);return;}}
