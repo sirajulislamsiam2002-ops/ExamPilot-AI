@@ -59,6 +59,7 @@ begin
   end if;
   if now()>v_attempt.started_at+make_interval(mins=>v_exam.duration_minutes)
      or (v_exam.ends_at is not null and now()>v_exam.ends_at) then
+    perform set_config('app.exam_rpc','true',true);
     update public.exam_attempts set status='submitted',submitted_at=now(),
       answers=v_attempt.answers,auto_score=public.calculate_exam_auto_score(p_exam_id,v_attempt.answers),
       score=public.calculate_exam_auto_score(p_exam_id,v_attempt.answers),
@@ -124,6 +125,7 @@ begin
   select coalesce(sum(q.marks),0) into v_total
   from public.exam_questions q where q.exam_id=v_exam.id;
   v_auto:=public.calculate_exam_auto_score(v_exam.id,v_attempt.answers);
+  perform set_config('app.exam_rpc','true',true);
   update public.exam_attempts set status='submitted',submitted_at=now(),
     auto_score=v_auto,score=v_auto,total_marks=v_total
   where id=v_attempt.id returning * into v_attempt;
@@ -159,6 +161,7 @@ begin
     raise exception 'Manual score must be between zero and the written-question total';
   end if;
   v_auto:=coalesce(v_attempt.auto_score,0);
+  perform set_config('app.exam_rpc','true',true);
   update public.exam_attempts set manual_score=p_manual_score,
     score=v_auto+p_manual_score,feedback=coalesce(p_feedback,''),
     status='evaluated',evaluated_at=now()
