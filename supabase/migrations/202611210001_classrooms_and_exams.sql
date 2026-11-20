@@ -15,14 +15,14 @@ create policy profiles_admin_update on public.profiles for update
 
 create or replace function public.prevent_self_role_change()
 returns trigger language plpgsql security definer set search_path = public
-as $
+as $$
 begin
   if new.role is distinct from old.role and not public.is_admin() then
     raise exception 'Only an administrator can change account roles';
   end if;
   return new;
 end;
-$;
+$$;
 drop trigger if exists profiles_role_guard on public.profiles;
 create trigger profiles_role_guard before update on public.profiles
 for each row execute function public.prevent_self_role_change();
@@ -57,7 +57,7 @@ for each row execute function public.create_classroom_invite();
 
 create or replace function public.get_classroom_invite(p_classroom_id uuid)
 returns text language plpgsql security definer set search_path = public
-as $
+as $$
 declare v_token text;
 begin
   select i.invite_token into v_token
@@ -66,7 +66,7 @@ begin
   if v_token is null then raise exception 'Classroom not found or access denied'; end if;
   return v_token;
 end;
-$;
+$$;
 revoke all on function public.get_classroom_invite(uuid) from public;
 grant execute on function public.get_classroom_invite(uuid) to authenticated;
 
