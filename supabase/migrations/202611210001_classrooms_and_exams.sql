@@ -326,6 +326,7 @@ begin
     select * into v_exam from public.classroom_exams where id=old.exam_id;
     if now() > old.started_at + make_interval(mins => v_exam.duration_minutes)
       or (v_exam.ends_at is not null and now() > v_exam.ends_at) then
+      new.answers := old.answers;
       new.status := 'submitted';
     end if;
     if new.status = 'submitted' then new.submitted_at := now(); else new.submitted_at := null; end if;
