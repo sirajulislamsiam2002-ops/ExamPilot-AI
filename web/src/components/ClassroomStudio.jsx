@@ -99,7 +99,8 @@ export default function ClassroomStudio({ onNotify }) {
     if(error){onNotify(error.message);return;}
     if(correctAnswer.trim()){const {error:keyError}=await supabase.from("exam_answer_keys").insert({question_id:data.id,answer_key:{answer:correctAnswer.trim()}});if(keyError){onNotify("Question saved, but answer key could not be saved: "+keyError.message);}}
     setQuestions(prev=>[...prev,data]);setQuestionPrompt("");setQuestionOptions("");setCorrectAnswer("");onNotify("Question added to exam.");
-  };\n  const createExam=async(e)=>{
+  };
+  const createExam=async(e)=>{
     e.preventDefault();if(!selected||!examTitle.trim())return;
     const classroom=classrooms.find(c=>c.id===selected);
     const {data,error}=await supabase.from("classroom_exams").insert({classroom_id:selected,teacher_id:user.id,title:examTitle.trim(),duration_minutes:Number(duration),status:"draft"}).select().single();
