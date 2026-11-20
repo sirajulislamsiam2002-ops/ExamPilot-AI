@@ -9,9 +9,23 @@ alter table public.profiles add constraint profiles_role_check
 drop policy if exists profiles_update_own on public.profiles;
 create policy profiles_update_own on public.profiles for update
   using (auth.uid() = id)
-  with check (auth.uid() = id and role = 'student');
+  with check (auth.uid() = id);
 create policy profiles_admin_update on public.profiles for update
   using (public.is_admin()) with check (public.is_admin());
+
+create or replace function public.prevent_self_role_change()
+returns trigger language plpgsql security definer set search_path = public
+as $
+begin
+  if new.role is distinct from old.role and not public.is_admin() then
+    raise exception 'Only an administrator can change account roles';
+  end if;
+  return new;
+end;
+$;
+drop trigger if exists profiles_role_guard on public.profiles;
+create trigger profiles_role_guard before update on public.profiles
+for each row execute function public.prevent_self_role_change();
 
 create table if not exists public.classrooms (
   id uuid primary key default gen_random_uuid(),
@@ -145,7 +159,7 @@ create policy exam_read_authorized on public.classroom_exams for select
 using (teacher_id = auth.uid() or public.is_admin() or (
   status = 'published' and exists (
     select 1 from public.classroom_members m
-    where m.classroom_id = classroom_id and m.student_id = auth.uid() and m.status = 'approved'
+    where m.classroom_id = public.classroom_exams.classroom_id and m.student_id = auth.uid() and m.status = 'approved'
   )
 ));
 create policy exam_insert_teacher on public.classroom_exams for insert
@@ -197,3 +211,32 @@ create index if not exists classroom_teacher_idx on public.classrooms(teacher_id
 create index if not exists classroom_member_student_idx on public.classroom_members(student_id,status);
 create index if not exists classroom_exam_class_idx on public.classroom_exams(classroom_id,status);
 create index if not exists exam_attempt_student_idx on public.exam_attempts(student_id,exam_id);
+
+-- Prevent students from changing grades or modifying an attempt after submission.
+create or replace function public.guard_exam_attempt_updates()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+begin
+  if auth.uid() = old.student_id and not public.is_admin() then
+    if new.student_id is distinct from old.student_id
+      or new.exam_id is distinct from old.exam_id
+      or new.score is distinct from old.score
+      or new.total_marks is distinct from old.total_marks then
+      raise exception 'Students cannot change attempt ownership or marks';
+    end if;
+    if old.status <> 'in_progress' then
+      raise exception 'Submitted exam attempts cannot be edited';
+    end if;
+    if new.status not in ('in_progress','submitted') then
+      raise exception 'Invalid student attempt status';
+    end if;
+    if new.status = 'submitted' and new.submitted_at is null then
+      new.submitted_at := now();
+    end if;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists exam_attempt_update_guard on public.exam_attempts;
+create trigger exam_attempt_update_guard before update on public.exam_attempts
+for each row execute function public.guard_exam_attempt_updates();
