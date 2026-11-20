@@ -147,9 +147,14 @@ using (teacher_id = auth.uid() or exists (
   select 1 from public.classroom_members m
   where m.classroom_id = id and m.student_id = auth.uid() and m.status = 'approved'
 ) or public.is_admin());
+create policy classroom_read_pending_member on public.classrooms for select
+using (exists (
+  select 1 from public.classroom_members m
+  where m.classroom_id = id and m.student_id = auth.uid() and m.status in ('pending','approved')
+));
 create policy classroom_insert_teacher on public.classrooms for insert
-with check (teacher_id = auth.uid() and exists (
-  select 1 from public.profiles p where p.id = auth.uid() and p.role = 'teacher'
+with check (teacher_id = auth.uid() and (
+  public.is_admin() or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'teacher')
 ));
 create policy classroom_update_teacher on public.classrooms for update
 using (teacher_id = auth.uid() or public.is_admin())
