@@ -1,90 +1,124 @@
-import React, { useState } from "react";
-import { Alert, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { Alert, BackHandler, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
-import { Language, translations } from "./src/i18n";
 
-type Tab = "home" | "student" | "teacher" | "genie";
-type Message = { id: number; text: string; from: "user" | "genie" };
-const C = { navy:"#111B3C", navy2:"#1D2B57", purple:"#7657E8", pale:"#F0ECFF", bg:"#F5F6FB", white:"#FFFFFF", text:"#18213D", muted:"#8991A8", line:"#E9EBF3", green:"#24A879", orange:"#F2A64A", blue:"#4A83E8" };
-
-function Icon({ symbol, color=C.navy, bg=C.pale }: {symbol:string;color?:string;bg?:string}) {
-  return <View style={[s.iconBox,{backgroundColor:bg}]}><Text style={{color,fontSize:19,fontWeight:"800"}}>{symbol}</Text></View>;
-}
-function Progress({value,color=C.purple}:{value:number;color?:string}) {
-  return <View style={s.progressTrack}><View style={[s.progressFill,{width:`${value}%`,backgroundColor:color}]}/></View>;
-}
-function Section({title,right}:{title:string;right?:string}) {
-  return <View style={s.sectionRow}><Text style={s.sectionTitle}>{title}</Text>{right ? <Text style={s.link}>{right}</Text> : null}</View>;
-}
+type Page = "home" | "chat" | "exam" | "assignment" | "presentation" | "library";
+type SavedItem = { id: string; type: string; title: string; body: string; createdAt: string };
+type Msg = { id: string; role: "user" | "assistant"; text: string };
+const C = { navy:"#142B55", navy2:"#101F3D", blue:"#3974DC", purple:"#7656D8", bg:"#F4F6FB", ink:"#1C2740", muted:"#71809B", line:"#E4E9F2", white:"#FFFFFF", pale:"#F0ECFF", green:"#21845E" };
+const labels: Record<Page,string> = {home:"Dashboard",chat:"ExamGenie Chat",exam:"Exam Center",assignment:"Assignment Studio",presentation:"Presentation Studio",library:"My Library"};
+const nav: {key:Page; icon:string}[] = [{key:"home",icon:"⌂"},{key:"chat",icon:"✦"},{key:"exam",icon:"☑"},{key:"assignment",icon:"▤"},{key:"presentation",icon:"▣"},{key:"library",icon:"▦"}];
 
 export default function App() {
-  const [tab,setTab]=useState<Tab>("home");
-  const [language,setLanguage]=useState<Language>("en");
-  const [draft,setDraft]=useState("");
-  const [messages,setMessages]=useState<Message[]>([]);
-  const t=translations[language];
-  const send=()=>{
-    const value=draft.trim(); if(!value)return;
-    setMessages(old=>[...old,{id:Date.now(),text:value,from:"user"},{id:Date.now()+1,text:language==="bn"?"দারুণ প্রশ্ন! এটি এখন ডেমো উত্তর। লাইভ AI চালু করতে নিরাপদ backend ও AI API যুক্ত করতে হবে।":"Great question! This is a demo reply. Connect a secure backend and AI API to enable live AI answers.",from:"genie"}]);
-    setDraft("");
+  const [page,setPage] = useState<Page>("home");
+  const [history,setHistory] = useState<Page[]>([]);
+  const [items,setItems] = useState<SavedItem[]>([]);
+  const [language,setLanguage] = useState<"en"|"bn">("en");
+  const [busy,setBusy] = useState(false);
+  const [chatInput,setChatInput] = useState("");
+  const [messages,setMessages] = useState<Msg[]>([{id:"welcome",role:"assistant",text:"আসসালামু আলাইকুম! আমি ExamGenie। প্রশ্নপত্র, অ্যাসাইনমেন্ট, প্রেজেন্টেশন বা পড়ার নোট—কী তৈরি করতে চান?"}]);
+  const [examTitle,setExamTitle] = useState("Biochemistry Practice Test");
+  const [examTopic,setExamTopic] = useState("");
+  const [examCount,setExamCount] = useState("10");
+  const [examType,setExamType] = useState("MCQ");
+  const [examLevel,setExamLevel] = useState("Mixed");
+  const [assignmentTopic,setAssignmentTopic] = useState("");
+  const [assignmentWords,setAssignmentWords] = useState("1500");
+  const [assignmentStyle,setAssignmentStyle] = useState("Vancouver");
+  const [assignmentNotes,setAssignmentNotes] = useState("");
+  const [presentationTopic,setPresentationTopic] = useState("");
+  const [slideCount,setSlideCount] = useState("10");
+  const [audience,setAudience] = useState("University Students");
+  const [result,setResult] = useState<SavedItem|null>(null);
+
+  useEffect(()=>{ AsyncStorage.getItem("exampilot.library.v1").then(raw=>{if(raw){try{setItems(JSON.parse(raw));}catch{setItems([]);}}}).catch(()=>{}); },[]);
+  useEffect(()=>{ const sub=BackHandler.addEventListener("hardwareBackPress",()=>{if(history.length){setPage(history[history.length-1]);setHistory(h=>h.slice(0,-1));return true;}if(page!=="home"){setPage("home");return true;}return false;});return ()=>sub.remove();},[history,page]);
+  const bn = language==="bn";
+  const go = (next:Page)=>{if(next!==page){setHistory(h=>[...h.slice(-8),page]);setPage(next);setResult(null);}};
+  const back = ()=>{if(history.length){setPage(history[history.length-1]);setHistory(h=>h.slice(0,-1));}else setPage("home");};
+  const persist = async (next:SavedItem[])=>{setItems(next);try{await AsyncStorage.setItem("exampilot.library.v1",JSON.stringify(next));}catch{Alert.alert("Storage error","Could not save this item on the device.");}};
+  const save = async (item:SavedItem)=>{const next=[item,...items.filter(x=>x.id!==item.id)];await persist(next);Alert.alert("Saved to My Library","Your work is stored on this device.");};
+  const makeItem = (type:string,title:string,body:string):SavedItem=>({id:Date.now().toString(),type,title,body,createdAt:new Date().toLocaleString()});
+  const makeExam = ()=>{
+    if(!examTopic.trim()){Alert.alert("Topic required","Please enter a subject or chapter.");return;}
+    const n=Math.max(1,Math.min(50,Number(examCount)||10));
+    const qs=Array.from({length:n},(_,i)=>examType==="MCQ"?`${i+1}. Which statement best describes an important concept in ${examTopic.trim()}?\n   A. Option A\n   B. Option B\n   C. Option C\n   D. Option D\n   Answer: Review the relevant chapter.`:`${i+1}. Explain an important principle of ${examTopic.trim()} and give one relevant example.\n   Suggested answer: Write a concise explanation supported by key terms and examples.`).join("\n\n");
+    const body=`EXAM: ${examTitle}\nTOPIC: ${examTopic}\nTYPE: ${examType} · LEVEL: ${examLevel}\nTOTAL QUESTIONS: ${n}\n\n${qs}\n\nNote: This is an editable practice-question template, not an AI-verified exam paper.`;
+    setResult(makeItem("Question Paper",examTitle,body));
   };
-  const coming=(name:string)=>Alert.alert(name,language==="bn"?"এই ফিচারটি পরবর্তী সংস্করণে যুক্ত করা হবে।":"This feature will be added in a future update.");
-  const nav:[Tab,string,string][]=[["home","⌂",t.dashboard],["student","▤",t.student],["teacher","▣",t.teacher],["genie","✦",t.genie]];
+  const makeAssignment = ()=>{
+    if(!assignmentTopic.trim()){Alert.alert("Topic required","Please enter an assignment topic.");return;}
+    const body=`ASSIGNMENT: ${assignmentTopic}\nTarget length: ${assignmentWords} words\nReferencing: ${assignmentStyle}\n\n1. Title page\n2. Abstract / Executive summary\n3. Introduction and background\n4. Aim and objectives\n5. Main discussion and key concepts\n6. Evidence, examples, tables and diagrams\n7. Critical analysis and limitations\n8. Conclusion and recommendations\n9. References (${assignmentStyle})\n\nSpecial instructions: ${assignmentNotes||"None"}\n\nNote: This is a structured outline generated on-device. Verify all facts and references before submission.`;
+    setResult(makeItem("Assignment",assignmentTopic,body));
+  };
+  const makePresentation = ()=>{
+    if(!presentationTopic.trim()){Alert.alert("Topic required","Please enter a presentation topic.");return;}
+    const n=Math.max(3,Math.min(30,Number(slideCount)||10));
+    const sections=["Title and learning objectives","Introduction and background","Definitions and key concepts","Core principles / mechanism","Detailed explanation – Part 1","Detailed explanation – Part 2","Diagram or visual explanation","Applications and examples","Recent research / case study","Advantages and limitations","Summary and key takeaways","Conclusion","Discussion questions","References"];
+    const body=Array.from({length:n},(_,i)=>`SLIDE ${i+1}: ${sections[i]||"Further topic discussion"}\nKey points: Introduce ${presentationTopic}, explain the essential ideas for ${audience.toLowerCase()}, and add a relevant example or visual.`).join("\n\n");
+    setResult(makeItem("Presentation",presentationTopic,body));
+  };
+  const sendChat=()=>{
+    const text=chatInput.trim();if(!text)return;
+    const user:Msg={id:Date.now().toString(),role:"user",text};
+    const low=text.toLowerCase();
+    const kind=low.includes("presentation")||low.includes("slide")||low.includes("স্লাইড")?"Presentation":low.includes("assignment")||low.includes("অ্যাসাইনমেন্ট")?"Assignment":low.includes("mcq")||low.includes("question")||low.includes("প্রশ্ন")?"Exam Center":"Study support";
+    const reply=`I understood this as a ${kind} request. Open the matching workspace from the menu to create and save an editable draft.\n\nImportant: ExamGenie is currently in offline assistant mode. Live generative AI, PDF understanding and cloud sync require a secure AI backend and API connection; this reply is not generated by a live AI model.`;
+    setMessages(m=>[...m,user,{id:(Date.now()+1).toString(),role:"assistant",text:reply}]);setChatInput("");
+  };
+  const exportPdf = async (item:SavedItem) => {
+    try {
+      setBusy(true);
+      const escapeHtml = (value:string) => value.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+      const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+        body{font-family:Arial,sans-serif;color:#1c2740;padding:32px;line-height:1.55}
+        h1{color:#142b55;font-size:24px;margin-bottom:4px}
+        .by{color:#71809b;font-size:11px;margin-bottom:24px}
+        pre{white-space:pre-wrap;word-wrap:break-word;font-family:Arial,sans-serif;font-size:12px}
+        footer{border-top:1px solid #ddd;margin-top:28px;padding-top:12px;color:#71809b;font-size:10px}
+      </style></head><body><h1>${escapeHtml(item.title)}</h1><div class="by">${escapeHtml(item.type)} · ExamPilot AI</div><pre>${escapeHtml(item.body)}</pre><footer>ExamPilot AI<br/>Created &amp; Developed By Sirajul Islam</footer></body></html>`;
+      const file = await Print.printToFileAsync({html});
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert("PDF created", "PDF was generated, but sharing is unavailable on this device.");
+        return;
+      }
+      await Sharing.shareAsync(file.uri,{mimeType:"application/pdf",dialogTitle:"Share ExamPilot AI PDF"});
+    } catch (error) {
+      Alert.alert("PDF export failed", error instanceof Error ? error.message : "Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const Button=({title,onPress,secondary=false}:{title:string;onPress:()=>void;secondary?:boolean})=><Pressable onPress={onPress} style={[s.button,secondary&&s.secondary]}><Text style={[s.buttonText,secondary&&s.secondaryText]}>{title}</Text></Pressable>;
+  const Field=({label,value,onChange,placeholder,multiline=false,keyboardType}:{label:string;value:string;onChange:(v:string)=>void;placeholder:string;multiline?:boolean;keyboardType?:"default"|"numeric"})=><View style={s.field}><Text style={s.label}>{label}</Text><TextInput value={value} onChangeText={onChange} placeholder={placeholder} placeholderTextColor={C.muted} multiline={multiline} keyboardType={keyboardType||"default"} style={[s.input,multiline&&s.multiline]}/></View>;
+  const Section=({title,sub}:{title:string;sub?:string})=><View style={s.section}><Text style={s.sectionTitle}>{title}</Text>{sub?<Text style={s.muted}>{sub}</Text>:null}</View>;
+  const renderResult=()=>result?<View style={s.result}><Text style={s.resultTitle}>{result.title}</Text><Text style={s.resultMeta}>{result.type} · Editable draft</Text><Text style={s.resultBody}>{result.body}</Text><Button title="Save to My Library" onPress={()=>save(result)}/><Button title={busy?"Preparing PDF…":"Export / Share PDF"} secondary onPress={()=>exportPdf(result)}/><Button title="Back to editor" secondary onPress={()=>setResult(null)}/></View>:null;
+
   return <SafeAreaView style={s.safe}>
     <ExpoStatusBar style="light" backgroundColor={C.navy}/><StatusBar barStyle="light-content" backgroundColor={C.navy}/>
     <View style={s.header}>
-      <View style={s.brandRow}><View style={s.brandMark}><Text style={s.brandMarkText}>E</Text></View><View><Text style={s.brand}>ExamPilot AI</Text><Text style={s.byline}>Created & Developed By Sirajul Islam</Text></View></View>
-      <Pressable onPress={()=>setLanguage(language==="en"?"bn":"en")} style={s.lang}><Text style={s.langText}>{t.language}</Text></Pressable>
+      <Pressable onPress={back} style={s.back}><Text style={s.backText}>{page==="home"?"🎓":"‹"}</Text></Pressable>
+      <View style={s.brand}><Text style={s.brandName}>ExamPilot AI</Text><Text style={s.byline}>Created & Developed By Sirajul Islam</Text></View>
+      <Pressable onPress={()=>setLanguage(bn?"en":"bn")} style={s.lang}><Text style={s.langText}>{bn?"EN":"বাং"}</Text></Pressable>
     </View>
-    <KeyboardAvoidingView style={s.body} behavior={Platform.OS==="ios"?"padding":undefined}>
-      {tab==="home" && <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-        <View style={s.greetRow}><View style={{flex:1}}><Text style={s.eyebrow}>{t.greeting} 👋</Text><Text style={s.pageTitle}>{t.welcomeBack}</Text><Text style={s.subtitle}>{t.subtitle}</Text></View><View style={s.avatar}><Text style={s.avatarText}>S</Text></View></View>
-        <View style={s.hero}><Text style={s.heroKicker}>✦ EXAMPILOT AI</Text><Text style={s.heroTitle}>{language==="bn"?"তোমার লক্ষ্য, তোমার গতি।":"Your goals. Your pace."}</Text><Text style={s.heroSub}>{language==="bn"?"প্রতিদিন একটু একটু করে এগিয়ে যাও।":"Make progress, one focused session at a time."}</Text><Pressable style={s.heroBtn} onPress={()=>setTab("genie")}><Text style={s.heroBtnText}>{t.continueLearning}  →</Text></Pressable><Text style={s.heroStar}>✦</Text></View>
-        <Section title={t.overview}/>
-        <View style={s.stats}><View style={s.stat}><Icon symbol="◷" color={C.blue} bg="#EAF1FF"/><Text style={s.statValue}>12.5h</Text><Text style={s.statLabel}>{t.studyTime}</Text><Text style={s.statHint}>↗ 8% this week</Text></View><View style={s.stat}><Icon symbol="♨" color={C.orange} bg="#FFF3E4"/><Text style={s.statValue}>7 {language==="bn"?"দিন":"days"}</Text><Text style={s.statLabel}>{t.streak}</Text><Text style={s.statHint}>🔥 Keep it up</Text></View></View>
-        <Section title={t.progress} right="68%"/>
-        <View style={s.card}><View style={s.inlineBetween}><Text style={s.cardTitle}>{language==="bn"?"সাপ্তাহিক লক্ষ্য":"Weekly learning goal"}</Text><Text style={s.percent}>68%</Text></View><Progress value={68}/><Text style={s.mutedSmall}>{language==="bn"?"এই সপ্তাহে ৫ দিনের মধ্যে ৩ দিন সম্পন্ন":"3 of 5 study days completed"}</Text></View>
-        <Section title={t.upcoming} right={t.seeAll}/>
-        <View style={s.examCard}><View style={s.examIcon}><Text style={{fontSize:22}}>📘</Text></View><View style={{flex:1}}><Text style={s.cardTitle}>{language==="bn"?"মলিকিউলার বায়োলজি":"Molecular Biology"}</Text><Text style={s.mutedSmall}>Nov 28, 2026  •  10:00 AM</Text><Text style={s.examTag}>{language==="bn"?"৮ দিন বাকি":"8 days left"}</Text></View><Text style={s.arrow}>›</Text></View>
-        <Section title={t.quickActions}/>
-        <View style={s.actions}>{[[ "✎",t.practice,"#EAF1FF",C.blue],[ "▤",t.notes,"#F0ECFF",C.purple],[ "◷",t.timetable,"#E8F7F1",C.green]].map(([ico,label,bg,color])=><Pressable key={label} style={s.action} onPress={()=>coming(label)}><Icon symbol={ico as string} bg={bg as string} color={color as string}/><Text style={s.actionText}>{label}</Text></Pressable>)}</View>
-        <Text style={s.footer}>ExamPilot AI  •  Created & Developed By Sirajul Islam</Text>
-      </ScrollView>}
-      {tab==="student" && <ScrollView contentContainerStyle={s.content}>
-        <Text style={s.eyebrow}>{t.welcomeBack}</Text><Text style={s.pageTitle}>{t.studentTitle}</Text><Text style={s.subtitle}>{language==="bn"?"তোমার কোর্স ও অ্যাসাইনমেন্ট এক জায়গায়":"Track courses, assignments and your learning progress."}</Text>
-        <View style={s.stats}><View style={s.stat}><Icon symbol="▤"/><Text style={s.statValue}>04</Text><Text style={s.statLabel}>{t.courses}</Text></View><View style={s.stat}><Icon symbol="✓" color={C.green} bg="#E8F7F1"/><Text style={s.statValue}>08</Text><Text style={s.statLabel}>{t.completed}</Text></View></View>
-        <Section title={t.courses} right={t.seeAll}/>
-        {[["Biochemistry","72%",72,C.purple],["Molecular Biology","54%",54,C.blue],["Genetics","86%",86,C.green]].map(([name,pct,val,color])=><View key={name} style={s.card}><View style={s.inlineBetween}><Text style={s.cardTitle}>{name}</Text><Text style={s.percent}>{pct}</Text></View><Progress value={val as number} color={color as string}/><Text style={s.mutedSmall}>{language==="bn"?"কোর্সের অগ্রগতি":"Course progress"}</Text></View>)}
-        <Section title={t.assignments} right={t.dueSoon}/><View style={s.examCard}><Icon symbol="▧"/><View style={{flex:1}}><Text style={s.cardTitle}>Cell Signaling Report</Text><Text style={s.mutedSmall}>Due Nov 24 • Biochemistry</Text></View><Text style={s.statusPending}>{t.pending}</Text></View>
-        <Pressable style={s.primaryBtn} onPress={()=>coming(t.viewSchedule)}><Text style={s.primaryText}>{t.viewSchedule}</Text></Pressable>
-      </ScrollView>}
-      {tab==="teacher" && <ScrollView contentContainerStyle={s.content}>
-        <Text style={s.eyebrow}>{t.welcomeBack}</Text><Text style={s.pageTitle}>{t.teacherTitle}</Text><Text style={s.subtitle}>{language==="bn"?"ক্লাস ও শিক্ষার্থীদের পরিচালনা করো":"Manage classes, learners and assessments."}</Text>
-        <View style={s.stats}><View style={s.stat}><Icon symbol="♙" color={C.blue} bg="#EAF1FF"/><Text style={s.statValue}>128</Text><Text style={s.statLabel}>{t.learners}</Text></View><View style={s.stat}><Icon symbol="▣"/><Text style={s.statValue}>06</Text><Text style={s.statLabel}>{t.assessments}</Text></View></View>
-        <Section title={t.tools}/><View style={s.toolGrid}>{[[ "✦",t.createQuiz ],[ "▤",t.classNotes ],[ "✓",t.assessments ],[ "◷",t.timetable ]].map(([ico,label])=><Pressable key={label} style={s.tool} onPress={()=>coming(label)}><Icon symbol={ico}/><Text style={s.toolText}>{label}</Text><Text style={s.arrow}>›</Text></Pressable>)}</View>
-        <Section title={t.recentActivity}/><View style={s.card}><Text style={s.cardTitle}>Class 10 — Biology</Text><Text style={s.mutedSmall}>{language==="bn"?"১২ জন শিক্ষার্থী কুইজ সম্পন্ন করেছে":"12 students completed the latest quiz."}</Text><Progress value={78} color={C.green}/><Text style={s.mutedSmall}>78% {t.completed}</Text></View>
-      </ScrollView>}
-      {tab==="genie" && <View style={s.chatPage}>
-        <View style={s.chatHeading}><View style={s.genieBadge}><Text style={{fontSize:24,color:C.white}}>✦</Text></View><View style={{flex:1}}><Text style={s.pageTitle}>ExamGenie</Text><Text style={s.subtitle}>{t.online}</Text></View><View style={s.demoPill}><Text style={s.demoText}>{t.demo}</Text></View></View>
-        <View style={s.notice}><Text style={s.noticeText}>ⓘ {t.demoText}</Text></View>
-        <ScrollView style={s.chatScroll} contentContainerStyle={{paddingBottom:18}}>{messages.length===0?<View style={s.welcomeCard}><Text style={s.welcomeIcon}>✦</Text><Text style={s.welcomeTitle}>{t.genieWelcome}</Text><Text style={s.welcomeBody}>{t.genieIntro}</Text></View>:messages.map(m=><View key={m.id} style={[s.message,{alignSelf:m.from==="user"?"flex-end":"flex-start",backgroundColor:m.from==="user"?C.navy:C.white}]}><Text style={{color:m.from==="user"?C.white:C.text,lineHeight:21}}>{m.text}</Text></View>)}</ScrollView>
-        <View style={s.composer}><TextInput value={draft} onChangeText={setDraft} placeholder={t.askGenie} placeholderTextColor={C.muted} style={s.input} multiline/><Pressable style={s.sendBtn} onPress={send}><Text style={s.sendText}>➤</Text></Pressable></View>
-      </View>}
+    <View style={s.crumb}><Text style={s.crumbText}>Academic Workspace / <Text style={{fontWeight:"800",color:C.ink}}>{labels[page]}</Text></Text><Text style={s.online}>● On-device</Text></View>
+    <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==="ios"?"padding":undefined}>
+      <ScrollView key={page} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+        {page==="home"&&<><View style={s.hero}><Text style={s.heroKicker}>✦ YOUR ACADEMIC WORKSPACE</Text><Text style={s.heroTitle}>{bn?"ExamPilot AI-তে স্বাগতম":"Welcome to ExamPilot AI"}</Text><Text style={s.heroSub}>{bn?"এক জায়গায় পরীক্ষা, অ্যাসাইনমেন্ট, প্রেজেন্টেশন ও পড়াশোনার কাজ পরিচালনা করুন।":"Manage exams, assignments, presentations and study work in one place."}</Text><Text style={s.heroBy}>Created & Developed By Sirajul Islam</Text></View><Section title={bn?"আপনার Academic Workspace":"Your Academic Workspace"} sub="Choose a tool to get started"/><View style={s.grid}>{nav.filter(x=>x.key!=="home").map(x=><Pressable key={x.key} style={s.tile} onPress={()=>go(x.key)}><Text style={s.tileIcon}>{x.icon}</Text><Text style={s.tileTitle}>{labels[x.key]}</Text><Text style={s.tileSub}>{({chat:"Ask and plan academic work",exam:"Build practice question papers",assignment:"Create structured assignments",presentation:"Prepare slide-by-slide content",library:"Open saved work"})[x.key]}</Text></Pressable>)}</View><Section title="Workspace Overview"/><View style={s.stats}><View style={s.stat}><Text style={s.statNum}>{items.filter(x=>x.type==="Assignment").length}</Text><Text style={s.muted}>Saved Assignments</Text></View><View style={s.stat}><Text style={s.statNum}>{items.filter(x=>x.type==="Question Paper").length}</Text><Text style={s.muted}>Question Papers</Text></View><View style={s.stat}><Text style={s.statNum}>{items.filter(x=>x.type==="Presentation").length}</Text><Text style={s.muted}>Presentations</Text></View></View><View style={s.note}><Text style={s.noteTitle}>Development status</Text><Text style={s.muted}>Offline draft tools and on-device library are being implemented first. Live AI, PDF extraction and cloud accounts need a secure backend and will be added as separate integrations.</Text></View></>}
+        {page==="chat"&&<><Section title="✦ ExamGenie — AI Academic Assistant" sub="Describe the academic task you want help with."/><View style={s.note}><Text style={s.noteTitle}>Offline mode</Text><Text style={s.muted}>This chat currently routes requests to the relevant tool. Live AI answers are not enabled yet.</Text></View><View style={s.chat}>{messages.map(m=><View key={m.id} style={[s.bubble,m.role==="user"?s.userBubble:s.botBubble]}><Text style={[s.bubbleText,m.role==="user"&&{color:C.white}]}>{m.text}</Text></View>)}</View><View style={s.composer}><TextInput value={chatInput} onChangeText={setChatInput} placeholder="Write your request..." multiline style={[s.input,{flex:1,minHeight:46}]}/><Button title="Send" onPress={sendChat}/></View><View style={s.quick}><Button title="Create exam" secondary onPress={()=>go("exam")}/><Button title="Assignment" secondary onPress={()=>go("assignment")}/><Button title="Presentation" secondary onPress={()=>go("presentation")}/></View></>}
+        {page==="exam"&&<><Section title="☑ Exam Center" sub="Create an editable practice question paper."/><Field label="Exam name" value={examTitle} onChange={setExamTitle} placeholder="e.g. Biochemistry Midterm"/><Field label="Subject / Chapter" value={examTopic} onChange={setExamTopic} placeholder="e.g. Enzyme Kinetics"/><Field label="Number of questions (1–50)" value={examCount} onChange={setExamCount} placeholder="10" keyboardType="numeric"/><Text style={s.label}>Question type</Text><View style={s.quick}>{["MCQ","Short"].map(v=><Pressable key={v} onPress={()=>setExamType(v)} style={[s.choice,examType===v&&s.choiceActive]}><Text style={[s.choiceText,examType===v&&s.choiceTextActive]}>{v}</Text></Pressable>)}</View><Text style={s.label}>Difficulty</Text><View style={s.quick}>{["Easy","Mixed","Hard"].map(v=><Pressable key={v} onPress={()=>setExamLevel(v)} style={[s.choice,examLevel===v&&s.choiceActive]}><Text style={[s.choiceText,examLevel===v&&s.choiceTextActive]}>{v}</Text></Pressable>)}</View><Button title="Generate practice paper" onPress={makeExam}/>{renderResult()}</>}
+        {page==="assignment"&&<><Section title="▤ Assignment Studio" sub="Build a structured academic assignment draft."/><Field label="Assignment topic" value={assignmentTopic} onChange={setAssignmentTopic} placeholder="e.g. Enzyme Kinetics"/><Field label="Target word count" value={assignmentWords} onChange={setAssignmentWords} placeholder="1500" keyboardType="numeric"/><Text style={s.label}>Referencing style</Text><View style={s.quick}>{["Vancouver","APA 7th","Harvard","MLA"].map(v=><Pressable key={v} onPress={()=>setAssignmentStyle(v)} style={[s.choice,assignmentStyle===v&&s.choiceActive]}><Text style={[s.choiceText,assignmentStyle===v&&s.choiceTextActive]}>{v}</Text></Pressable>)}</View><Field label="Special instructions" value={assignmentNotes} onChange={setAssignmentNotes} placeholder="Add required sections, focus areas or formatting notes..." multiline/><Button title="Generate assignment outline" onPress={makeAssignment}/>{renderResult()}</>}
+        {page==="presentation"&&<><Section title="▣ Presentation Studio" sub="Prepare slide-by-slide content for your presentation."/><Field label="Presentation topic" value={presentationTopic} onChange={setPresentationTopic} placeholder="e.g. Molecular Biology"/><Field label="Number of slides (3–30)" value={slideCount} onChange={setSlideCount} placeholder="10" keyboardType="numeric"/><Text style={s.label}>Audience</Text><View style={s.quick}>{["University Students","Teachers","General Audience"].map(v=><Pressable key={v} onPress={()=>setAudience(v)} style={[s.choice,audience===v&&s.choiceActive]}><Text style={[s.choiceText,audience===v&&s.choiceTextActive]}>{v}</Text></Pressable>)}</View><Button title="Generate slide outline" onPress={makePresentation}/>{renderResult()}</>}
+        {page==="library"&&<><Section title="▦ My Library" sub="Your saved drafts stay on this Android device."/>{items.length===0?<View style={s.empty}><Text style={s.tileIcon}>▦</Text><Text style={s.tileTitle}>No saved work yet</Text><Text style={s.muted}>Generate an exam, assignment or presentation and save it here.</Text></View>:items.map(item=><View key={item.id} style={s.libraryItem}><Text style={s.resultMeta}>{item.type} · {item.createdAt}</Text><Text style={s.tileTitle}>{item.title}</Text><Text style={s.muted} numberOfLines={3}>{item.body}</Text><View style={s.quick}><Button title="Open" secondary onPress={()=>{setResult(item);setPage(item.type==="Assignment"?"assignment":item.type==="Presentation"?"presentation":"exam");}}/><Button title="PDF" secondary onPress={()=>exportPdf(item)}/><Button title="Delete" secondary onPress={()=>Alert.alert("Delete saved work?","This cannot be undone.",[{text:"Cancel"},{text:"Delete",style:"destructive",onPress:()=>persist(items.filter(x=>x.id!==item.id))}])}/></View></View>)}</>}
+      </ScrollView>
     </KeyboardAvoidingView>
-    <View style={s.bottomNav}>{nav.map(([key,ico,label])=><Pressable key={key} style={s.navItem} onPress={()=>setTab(key)}><Text style={[s.navIcon,{color:tab===key?C.purple:C.muted}]}>{ico}</Text><Text style={[s.navLabel,{color:tab===key?C.purple:C.muted,fontWeight:tab===key?"800":"600"}]}>{label}</Text>{tab===key?<View style={s.navDot}/>:null}</Pressable>)}</View>
+    <View style={s.bottom}>{nav.map(x=><Pressable key={x.key} onPress={()=>go(x.key)} style={s.navItem}><Text style={[s.navIcon,page===x.key&&s.active]}>{x.icon}</Text><Text numberOfLines={1} style={[s.navLabel,page===x.key&&s.active]}>{x.key==="home"?"Home":x.key==="chat"?"Genie":x.key==="exam"?"Exam":x.key==="assignment"?"Assign":x.key==="presentation"?"Slides":"Library"}</Text></Pressable>)}</View>
   </SafeAreaView>;
 }
 
 const s=StyleSheet.create({
- safe:{flex:1,backgroundColor:C.bg},header:{height:72,backgroundColor:C.navy,paddingHorizontal:18,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
- brandRow:{flexDirection:"row",alignItems:"center",gap:10},brandMark:{width:38,height:38,borderRadius:13,backgroundColor:C.purple,alignItems:"center",justifyContent:"center"},brandMarkText:{fontSize:23,color:C.white,fontWeight:"900"},brand:{fontSize:17,color:C.white,fontWeight:"900",letterSpacing:.2},byline:{fontSize:9,color:"#C2C9E0",marginTop:2},lang:{borderWidth:1,borderColor:"#465174",borderRadius:18,paddingHorizontal:12,paddingVertical:7},langText:{color:C.white,fontSize:12,fontWeight:"700"},
- body:{flex:1},content:{padding:18,paddingBottom:30},greetRow:{flexDirection:"row",alignItems:"center",marginBottom:18},eyebrow:{fontSize:12,color:C.purple,fontWeight:"800",letterSpacing:.5},pageTitle:{fontSize:25,fontWeight:"900",color:C.text,marginTop:4},subtitle:{fontSize:12,color:C.muted,marginTop:5,lineHeight:18},avatar:{width:46,height:46,borderRadius:16,backgroundColor:"#E6E0FF",alignItems:"center",justifyContent:"center"},avatarText:{fontSize:19,color:C.purple,fontWeight:"900"},
- hero:{backgroundColor:C.navy,borderRadius:22,padding:20,marginBottom:22,overflow:"hidden"},heroKicker:{color:"#BDB2FF",fontSize:10,fontWeight:"900",letterSpacing:1.4},heroTitle:{fontSize:23,color:C.white,fontWeight:"900",marginTop:12,maxWidth:"82%"},heroSub:{fontSize:12,color:"#C6CDE2",marginTop:7,maxWidth:"80%"},heroBtn:{alignSelf:"flex-start",marginTop:18,backgroundColor:C.purple,paddingHorizontal:15,paddingVertical:11,borderRadius:12},heroBtnText:{color:C.white,fontSize:12,fontWeight:"800"},heroStar:{position:"absolute",right:18,top:42,fontSize:70,color:"#3C4772"},
- sectionRow:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",marginTop:7,marginBottom:12},sectionTitle:{fontSize:15,color:C.text,fontWeight:"900"},link:{fontSize:11,color:C.purple,fontWeight:"800"},stats:{flexDirection:"row",gap:12,marginBottom:18},stat:{flex:1,backgroundColor:C.white,borderRadius:18,padding:14,borderWidth:1,borderColor:C.line},iconBox:{width:38,height:38,borderRadius:12,alignItems:"center",justifyContent:"center"},statValue:{fontSize:22,fontWeight:"900",color:C.text,marginTop:9},statLabel:{fontSize:11,color:C.muted,marginTop:2},statHint:{fontSize:10,color:C.green,marginTop:7,fontWeight:"700"},
- card:{backgroundColor:C.white,borderRadius:17,padding:15,marginBottom:11,borderWidth:1,borderColor:C.line},inlineBetween:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",marginBottom:11},cardTitle:{fontSize:13,color:C.text,fontWeight:"800"},percent:{fontSize:13,color:C.purple,fontWeight:"900"},progressTrack:{height:7,borderRadius:8,backgroundColor:"#ECEEF5",overflow:"hidden"},progressFill:{height:7,borderRadius:8},mutedSmall:{fontSize:10,color:C.muted,marginTop:8},
- examCard:{backgroundColor:C.white,borderRadius:17,padding:14,flexDirection:"row",alignItems:"center",gap:12,borderWidth:1,borderColor:C.line,marginBottom:16},examIcon:{width:44,height:44,borderRadius:14,backgroundColor:"#EEF2FF",alignItems:"center",justifyContent:"center"},examTag:{fontSize:10,color:C.orange,fontWeight:"800",marginTop:5},arrow:{fontSize:24,color:C.muted},actions:{flexDirection:"row",gap:10},action:{flex:1,backgroundColor:C.white,borderRadius:16,padding:12,alignItems:"center",gap:8,borderWidth:1,borderColor:C.line},actionText:{fontSize:10,color:C.text,fontWeight:"800",textAlign:"center"},footer:{fontSize:9,color:C.muted,textAlign:"center",marginTop:25},
- primaryBtn:{backgroundColor:C.purple,borderRadius:14,padding:14,alignItems:"center",marginTop:8},primaryText:{color:C.white,fontWeight:"800",fontSize:13},statusPending:{fontSize:10,color:C.orange,fontWeight:"800"},
- toolGrid:{gap:10,marginBottom:20},tool:{backgroundColor:C.white,borderRadius:15,padding:13,flexDirection:"row",alignItems:"center",gap:12,borderWidth:1,borderColor:C.line},toolText:{flex:1,fontSize:12,color:C.text,fontWeight:"800"},
- chatPage:{flex:1,padding:16},chatHeading:{flexDirection:"row",alignItems:"center",gap:12,marginBottom:15},genieBadge:{width:46,height:46,borderRadius:16,backgroundColor:C.purple,alignItems:"center",justifyContent:"center"},demoPill:{backgroundColor:"#FFF3E4",paddingHorizontal:10,paddingVertical:6,borderRadius:20},demoText:{fontSize:9,color:"#A66B1B",fontWeight:"800"},notice:{backgroundColor:"#F0ECFF",borderRadius:12,padding:11,marginBottom:14},noticeText:{fontSize:10,color:"#5F4AB6",lineHeight:15},chatScroll:{flex:1},welcomeCard:{backgroundColor:C.white,borderRadius:20,padding:22,marginTop:28,alignItems:"center",borderWidth:1,borderColor:C.line},welcomeIcon:{fontSize:35,color:C.purple},welcomeTitle:{fontSize:18,color:C.text,fontWeight:"900",marginTop:10},welcomeBody:{fontSize:12,color:C.muted,textAlign:"center",lineHeight:19,marginTop:8},message:{maxWidth:"85%",padding:13,borderRadius:16,marginVertical:5},composer:{flexDirection:"row",alignItems:"center",gap:9,backgroundColor:C.white,borderRadius:18,padding:8,borderWidth:1,borderColor:C.line,marginTop:12},input:{flex:1,minHeight:40,maxHeight:90,paddingHorizontal:9,color:C.text,fontSize:13},sendBtn:{width:42,height:42,borderRadius:14,backgroundColor:C.purple,alignItems:"center",justifyContent:"center"},sendText:{color:C.white,fontSize:19,fontWeight:"900"},
- bottomNav:{height:67,backgroundColor:C.white,borderTopWidth:1,borderTopColor:C.line,flexDirection:"row",justifyContent:"space-around",alignItems:"center",paddingBottom:3},navItem:{flex:1,alignItems:"center",justifyContent:"center",height:60,gap:2},navIcon:{fontSize:20},navLabel:{fontSize:9},navDot:{width:4,height:4,borderRadius:2,backgroundColor:C.purple,marginTop:1}
+ safe:{flex:1,backgroundColor:C.bg},header:{height:68,backgroundColor:C.navy,flexDirection:"row",alignItems:"center",paddingHorizontal:14,gap:10},back:{width:38,height:38,borderRadius:12,backgroundColor:"#263E68",alignItems:"center",justifyContent:"center"},backText:{color:C.white,fontSize:24,fontWeight:"800"},brand:{flex:1},brandName:{fontSize:19,color:C.white,fontWeight:"900"},byline:{fontSize:9,color:"#C4D1E8",marginTop:2},lang:{padding:9,borderRadius:12,borderWidth:1,borderColor:"#536487"},langText:{color:C.white,fontWeight:"800"},crumb:{height:34,backgroundColor:C.white,borderBottomWidth:1,borderColor:C.line,paddingHorizontal:16,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},crumbText:{fontSize:10,color:C.muted},online:{fontSize:9,color:C.green},content:{padding:16,paddingBottom:26},hero:{backgroundColor:C.navy,borderRadius:18,padding:22,marginBottom:22},heroKicker:{color:"#C8BFFF",fontSize:10,fontWeight:"900",letterSpacing:1.2},heroTitle:{color:C.white,fontSize:26,fontWeight:"900",marginTop:12},heroSub:{color:"#E0E9FB",fontSize:13,lineHeight:21,marginTop:8},heroBy:{color:"#C4D1E8",fontSize:10,marginTop:16},section:{marginTop:8,marginBottom:14},sectionTitle:{fontSize:19,fontWeight:"900",color:C.ink,marginBottom:5},muted:{fontSize:12,color:C.muted,lineHeight:18},grid:{flexDirection:"row",flexWrap:"wrap",gap:11},tile:{width:"48%",backgroundColor:C.white,borderRadius:14,borderWidth:1,borderColor:C.line,padding:15,minHeight:130},tileIcon:{fontSize:26,color:C.purple,marginBottom:9},tileTitle:{fontSize:13,fontWeight:"900",color:C.ink,marginBottom:5},tileSub:{fontSize:10,color:C.muted,lineHeight:15},stats:{flexDirection:"row",gap:9,marginTop:5},stat:{flex:1,backgroundColor:C.white,borderWidth:1,borderColor:C.line,borderRadius:13,padding:12},statNum:{fontSize:23,fontWeight:"900",color:C.navy},note:{backgroundColor:C.pale,borderRadius:12,padding:13,marginTop:16},noteTitle:{fontSize:12,fontWeight:"900",color:C.navy,marginBottom:5},button:{backgroundColor:C.blue,paddingHorizontal:15,paddingVertical:12,borderRadius:10,alignItems:"center",justifyContent:"center",marginTop:10},buttonText:{color:C.white,fontWeight:"800",fontSize:12},secondary:{backgroundColor:"#EEF3FF",borderWidth:1,borderColor:"#DBE5FB"},secondaryText:{color:C.navy},field:{marginBottom:13},label:{fontSize:12,fontWeight:"800",color:C.ink,marginBottom:6,marginTop:7},input:{backgroundColor:C.white,borderWidth:1,borderColor:C.line,borderRadius:10,padding:12,fontSize:13,color:C.ink,minHeight:44,textAlignVertical:"top"},multiline:{minHeight:95},quick:{flexDirection:"row",flexWrap:"wrap",gap:8,marginVertical:9},choice:{borderWidth:1,borderColor:C.line,backgroundColor:C.white,paddingHorizontal:13,paddingVertical:9,borderRadius:10},choiceActive:{borderColor:C.purple,backgroundColor:C.pale},choiceText:{fontSize:11,color:C.ink,fontWeight:"700"},choiceTextActive:{color:C.purple},result:{backgroundColor:C.white,borderWidth:1,borderColor:C.line,borderRadius:14,padding:15,marginTop:18},resultTitle:{fontSize:17,fontWeight:"900",color:C.ink},resultMeta:{fontSize:10,color:C.purple,fontWeight:"800",marginTop:5,marginBottom:9},resultBody:{fontSize:12,color:C.ink,lineHeight:20},chat:{gap:10,marginVertical:14},bubble:{padding:13,borderRadius:14,maxWidth:"90%"},userBubble:{backgroundColor:C.navy,alignSelf:"flex-end"},botBubble:{backgroundColor:C.white,borderWidth:1,borderColor:C.line,alignSelf:"flex-start"},bubbleText:{fontSize:12,color:C.ink,lineHeight:19},composer:{flexDirection:"row",alignItems:"flex-end",gap:8},empty:{backgroundColor:C.white,borderRadius:14,padding:25,alignItems:"center",marginTop:10},libraryItem:{backgroundColor:C.white,borderWidth:1,borderColor:C.line,borderRadius:14,padding:14,marginBottom:11},bottom:{height:62,backgroundColor:C.white,borderTopWidth:1,borderColor:C.line,flexDirection:"row",alignItems:"center",justifyContent:"space-around"},navItem:{flex:1,alignItems:"center",gap:3},navIcon:{fontSize:18,color:C.muted},navLabel:{fontSize:9,color:C.muted,fontWeight:"700"},active:{color:C.purple,fontWeight:"900"}
 });
