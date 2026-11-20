@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import StudentExam from "./StudentExam";
 
 export default function ClassroomStudio({ onNotify }) {
   const [user,setUser]=useState(null);
@@ -23,6 +24,7 @@ export default function ClassroomStudio({ onNotify }) {
   const [duration,setDuration]=useState(30);
   const [busy,setBusy]=useState(false);
   const [joinLink,setJoinLink]=useState("");
+  const [examToTake,setExamToTake]=useState(null);
   const isTeacher=profile?.role==="teacher"||profile?.role==="admin";
 
   const load=async()=>{
@@ -141,7 +143,7 @@ export default function ClassroomStudio({ onNotify }) {
           {isTeacher&&<><div className="classroom-list-head"><h3>Student requests & members</h3><span>{members.length}</span></div>{members.length===0?<p className="muted">No students have joined yet.</p>:members.map(m=><div className="member-row" key={m.id}><div><b>{m.display_name||"Student"}</b><small>{m.status}</small></div>{m.status==="pending"&&<div className="member-actions"><button onClick={()=>reviewMember(m.id,"approved")}>Approve</button><button onClick={()=>reviewMember(m.id,"rejected")}>Reject</button></div>}</div>)}
           <form className="create-exam-form" onSubmit={createExam}><h3>Create an exam</h3><label>Exam title<input value={examTitle} onChange={e=>setExamTitle(e.target.value)} placeholder="e.g. Cell Biology Midterm" required/></label><label>Duration (minutes)<input type="number" min="1" max="360" value={duration} onChange={e=>setDuration(e.target.value)}/></label><button className="primary-btn">＋ Create exam draft</button></form></>}
           <div className="classroom-list-head"><h3>{isTeacher?"Classroom exams":"Available exams"}</h3><span>{exams.length}</span></div>
-          {exams.length===0?<p className="muted">No exams have been added yet.</p>:exams.map(exam=><div className={"exam-row "+(selectedExamId===exam.id?"active":"")} key={exam.id} onClick={()=>isTeacher&&setSelectedExamId(exam.id)}><div><b>{exam.title}</b><small>{exam.duration_minutes} min · {exam.status}</small></div>{isTeacher&&exam.status==="draft"&&<button disabled={selectedExamId!==exam.id||questions.length===0} onClick={(e)=>{e.stopPropagation();publishExam(exam);}}>Publish</button>}{!isTeacher&&exam.status==="published"&&<span className="exam-ready">Available</span>}</div>)}
+          {exams.length===0?<p className="muted">No exams have been added yet.</p>:exams.map(exam=><div className={"exam-row "+(selectedExamId===exam.id?"active":"")} key={exam.id} onClick={()=>{if(isTeacher)setSelectedExamId(exam.id);else if(exam.status==="published")setExamToTake(exam);}}><div><b>{exam.title}</b><small>{exam.duration_minutes} min · {exam.status}</small></div>{isTeacher&&exam.status==="draft"&&<button disabled={selectedExamId!==exam.id||questions.length===0} onClick={(e)=>{e.stopPropagation();publishExam(exam);}}>Publish</button>}{!isTeacher&&exam.status==="published"&&<span className="exam-ready">Available</span>}</div>)}
           {isTeacher&&selectedExamId&&<div className="question-editor">
             <h3>Questions ({questions.length})</h3>
             {questions.map((q,i)=><div className="question-preview" key={q.id}><b>{i+1}. {q.prompt}</b><small>{q.question_type.toUpperCase()} · {q.marks} mark(s)</small>{q.options?.length>0&&<ul>{q.options.map((op,j)=><li key={j}>{op}</li>)}</ul>}</div>)}
@@ -157,6 +159,7 @@ export default function ClassroomStudio({ onNotify }) {
         </>}
       </section>
     </div>
-    <p className="classroom-note">Exam publishing is available here; question authoring, timed attempts, marking and results will be added in the next Exam System phase.</p>
+    {examToTake&&<StudentExam exam={examToTake} onClose={()=>setExamToTake(null)} onNotify={onNotify}/>}
+    <p className="classroom-note">Student exam sessions include a server-validated timer and automatic answer saving. MCQ scoring is automatic; written answers are evaluated by the teacher.</p>
   </div>;
 }
