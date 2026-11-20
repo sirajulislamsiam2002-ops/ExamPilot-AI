@@ -14,6 +14,12 @@ export default function ClassroomStudio({ onNotify }) {
   const [approval,setApproval]=useState(true);
   const [invite,setInvite]=useState("");
   const [examTitle,setExamTitle]=useState("");
+  const [selectedExamId,setSelectedExamId]=useState("");
+  const [questions,setQuestions]=useState([]);
+  const [questionType,setQuestionType]=useState("mcq");
+  const [questionPrompt,setQuestionPrompt]=useState("");
+  const [questionOptions,setQuestionOptions]=useState("");
+  const [correctAnswer,setCorrectAnswer]=useState("");
   const [duration,setDuration]=useState(30);
   const [busy,setBusy]=useState(false);
   const [joinLink,setJoinLink]=useState("");
@@ -84,7 +90,7 @@ export default function ClassroomStudio({ onNotify }) {
     try{await navigator.clipboard.writeText(link);onNotify("Invitation link copied.");}catch{setInvite(link);onNotify("Invitation link is shown below.");}
     setInvite(link);
   };
-  const createExam=async(e)=>{
+  useEffect(()=>{if(!selectedExamId){setQuestions([]);return;}supabase.from("exam_questions").select("id,question_order,question_type,prompt,options,marks").eq("exam_id",selectedExamId).order("question_order").then(({data})=>setQuestions(data||[]));},[selectedExamId]);\n  const createQuestion=async(e)=>{\n    e.preventDefault();if(!selectedExamId||!questionPrompt.trim())return;\n    const options=questionType==="mcq"?questionOptions.split("\\n").map(x=>x.trim()).filter(Boolean):[];\n    if(questionType==="mcq"&&options.length<2){onNotify("Add at least two options, one per line.");return;}\n    const {data,error}=await supabase.from("exam_questions").insert({exam_id:selectedExamId,question_order:questions.length+1,question_type:questionType,prompt:questionPrompt.trim(),options,marks:1}).select().single();\n    if(error){onNotify(error.message);return;}\n    if(correctAnswer.trim()){const {error:keyError}=await supabase.from("exam_answer_keys").insert({question_id:data.id,answer_key:{answer:correctAnswer.trim()}});if(keyError){onNotify("Question saved, but answer key could not be saved: "+keyError.message);}}\n    setQuestions(prev=>[...prev,data]);setQuestionPrompt("");setQuestionOptions("");setCorrectAnswer("");onNotify("Question added to exam.");\n  };\n  const createExam=async(e)=>{
     e.preventDefault();if(!selected||!examTitle.trim())return;
     const classroom=classrooms.find(c=>c.id===selected);
     const {data,error}=await supabase.from("classroom_exams").insert({classroom_id:selected,teacher_id:user.id,title:examTitle.trim(),duration_minutes:Number(duration),status:"draft"}).select().single();
@@ -125,7 +131,19 @@ export default function ClassroomStudio({ onNotify }) {
           {isTeacher&&<><div className="classroom-list-head"><h3>Student requests & members</h3><span>{members.length}</span></div>{members.length===0?<p className="muted">No students have joined yet.</p>:members.map(m=><div className="member-row" key={m.id}><div><b>{m.display_name||"Student"}</b><small>{m.status}</small></div>{m.status==="pending"&&<div className="member-actions"><button onClick={()=>reviewMember(m.id,"approved")}>Approve</button><button onClick={()=>reviewMember(m.id,"rejected")}>Reject</button></div>}</div>)}
           <form className="create-exam-form" onSubmit={createExam}><h3>Create an exam</h3><label>Exam title<input value={examTitle} onChange={e=>setExamTitle(e.target.value)} placeholder="e.g. Cell Biology Midterm" required/></label><label>Duration (minutes)<input type="number" min="1" max="360" value={duration} onChange={e=>setDuration(e.target.value)}/></label><button className="primary-btn">＋ Create exam draft</button></form></>}
           <div className="classroom-list-head"><h3>{isTeacher?"Classroom exams":"Available exams"}</h3><span>{exams.length}</span></div>
-          {exams.length===0?<p className="muted">No exams have been added yet.</p>:exams.map(exam=><div className="exam-row" key={exam.id}><div><b>{exam.title}</b><small>{exam.duration_minutes} min · {exam.status}</small></div>{isTeacher&&exam.status==="draft"&&<button onClick={()=>publishExam(exam)}>Publish</button>}{!isTeacher&&exam.status==="published"&&<span className="exam-ready">Available</span>}</div>)}
+          {exams.length===0?<p className="muted">No exams have been added yet.</p>:exams.map(exam=><div className={"exam-row "+(selectedExamId===exam.id?"active":"")} key={exam.id} onClick={()=>isTeacher&&setSelectedExamId(exam.id)}><div><b>{exam.title}</b><small>{exam.duration_minutes} min · {exam.status}</small></div>{isTeacher&&exam.status==="draft"&&<button disabled={selectedExamId!==exam.id||questions.length===0} onClick={(e)=>{e.stopPropagation();publishExam(exam);}}>Publish</button>}{!isTeacher&&exam.status==="published"&&<span className="exam-ready">Available</span>}</div>)}
+          {isTeacher&&selectedExamId&&<div className="question-editor">
+            <h3>Questions ({questions.length})</h3>
+            {questions.map((q,i)=><div className="question-preview" key={q.id}><b>{i+1}. {q.prompt}</b><small>{q.question_type.toUpperCase()} · {q.marks} mark(s)</small>{q.options?.length>0&&<ul>{q.options.map((op,j)=><li key={j}>{op}</li>)}</ul>}</div>)}
+            <form onSubmit={createQuestion} className="create-exam-form">
+              <h3>Add a question</h3>
+              <label>Question type<select value={questionType} onChange={e=>setQuestionType(e.target.value)}><option value="mcq">Multiple choice</option><option value="short">Short answer</option><option value="written">Written answer</option></select></label>
+              <label>Question prompt<textarea value={questionPrompt} onChange={e=>setQuestionPrompt(e.target.value)} placeholder="Write the question…" required/></label>
+              {questionType==="mcq"&&<label>Options (one per line)<textarea value={questionOptions} onChange={e=>setQuestionOptions(e.target.value)} placeholder={"Option A\\nOption B\\nOption C"}/></label>}
+              <label>Answer key (private to teacher)<textarea value={correctAnswer} onChange={e=>setCorrectAnswer(e.target.value)} placeholder="Correct answer or marking guidance"/></label>
+              <button className="primary-btn">＋ Add question</button>
+            </form>
+          </div>}
         </>}
       </section>
     </div>
