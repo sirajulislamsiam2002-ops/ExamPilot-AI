@@ -103,7 +103,6 @@ create table if not exists public.exam_questions (
   prompt text not null,
   options jsonb not null default '[]'::jsonb,
   marks numeric(7,2) not null default 1 check (marks > 0),
-  answer_key jsonb,
   created_at timestamptz not null default now()
 );
 
@@ -124,6 +123,22 @@ alter table public.classrooms enable row level security;
 alter table public.classroom_members enable row level security;
 alter table public.classroom_exams enable row level security;
 alter table public.exam_questions enable row level security;
+create table if not exists public.exam_answer_keys (
+  question_id uuid primary key references public.exam_questions(id) on delete cascade,
+  answer_key jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.exam_answer_keys enable row level security;
+create policy answer_key_teacher_only on public.exam_answer_keys for all
+using (exists (
+  select 1 from public.exam_questions q join public.classroom_exams e on e.id=q.exam_id
+  where q.id=question_id and (e.teacher_id=auth.uid() or public.is_admin())
+))
+with check (exists (
+  select 1 from public.exam_questions q join public.classroom_exams e on e.id=q.exam_id
+  where q.id=question_id and (e.teacher_id=auth.uid() or public.is_admin())
+));
+
 alter table public.exam_attempts enable row level security;
 
 -- Classroom owners and approved members can read their classroom.
@@ -270,3 +285,51 @@ $$;
 drop trigger if exists exam_attempt_update_guard on public.exam_attempts;
 create trigger exam_attempt_update_guard before update on public.exam_attempts
 for each row execute function public.guard_exam_attempt_updates();
+
+-- Server-side attempt start and deadline enforcement.
+create or replace function public.guard_exam_attempt_insert()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+declare v_exam public.classroom_exams%rowtype;
+begin
+  select * into v_exam from public.classroom_exams where id=new.exam_id;
+  if v_exam.id is null or v_exam.status <> 'published' then raise exception 'This exam is not available'; end if;
+  if v_exam.starts_at is not null and now() < v_exam.starts_at then raise exception 'This exam has not started yet'; end if;
+  if v_exam.ends_at is not null and now() > v_exam.ends_at then raise exception 'This exam has ended'; end if;
+  new.started_at := now();
+  new.submitted_at := null;
+  new.status := 'in_progress';
+  new.score := null;
+  new.total_marks := null;
+  return new;
+end;
+$$;
+drop trigger if exists exam_attempt_start_guard on public.exam_attempts;
+create trigger exam_attempt_start_guard before insert on public.exam_attempts
+for each row execute function public.guard_exam_attempt_insert();
+
+create or replace function public.guard_exam_attempt_updates()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+declare v_exam public.classroom_exams%rowtype;
+begin
+  if auth.uid() = old.student_id and not public.is_admin() then
+    if new.student_id is distinct from old.student_id
+      or new.exam_id is distinct from old.exam_id
+      or new.score is distinct from old.score
+      or new.total_marks is distinct from old.total_marks
+      or new.started_at is distinct from old.started_at then
+      raise exception 'Students cannot change attempt ownership, start time or marks';
+    end if;
+    if old.status <> 'in_progress' then raise exception 'Submitted exam attempts cannot be edited'; end if;
+    if new.status not in ('in_progress','submitted') then raise exception 'Invalid student attempt status'; end if;
+    select * into v_exam from public.classroom_exams where id=old.exam_id;
+    if now() > old.started_at + make_interval(mins => v_exam.duration_minutes)
+      or (v_exam.ends_at is not null and now() > v_exam.ends_at) then
+      new.status := 'submitted';
+    end if;
+    if new.status = 'submitted' then new.submitted_at := now(); else new.submitted_at := null; end if;
+  end if;
+  return new;
+end;
+$$;
