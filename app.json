@@ -1,3 +1,17 @@
 {
-  "expo":{"name":"Academia Studio","slug":"academia-studio","version":"1.0.0","orientation":"portrait","userInterfaceStyle":"light","newArchEnabled":true,"android":{"package":"com.sirajulislam.academiastudio","versionCode":1}}
+  "expo": {
+    "name": "Academia Studio",
+    "slug": "academia-studio",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "web": {
+      "bundler": "metro"
+    },
+    "android": {
+      "package": "com.sirajulislam.academiastudio",
+      "versionCode": 1
+    }
+  }
 }
