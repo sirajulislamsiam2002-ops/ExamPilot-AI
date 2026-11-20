@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import { supabase, isSupabaseConfigured } from "./lib/supabase";
 
 const modules = [
   { id:"dashboard", label:"Dashboard", icon:"▦", group:"WORKSPACE", desc:"Your academic command center" },
@@ -65,4 +66,23 @@ function App(){
   {toast&&<div className="toast">{toast}</div>}
  </div>
 }
-createRoot(document.getElementById("root")).render(<App/>);
+function AuthGate(){
+ const [session,setSession]=useState(null),[loading,setLoading]=useState(isSupabaseConfigured),[mode,setMode]=useState("signin"),[email,setEmail]=useState(""),[password,setPassword]=useState(""),[fullName,setFullName]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false);
+ React.useEffect(()=>{
+  if(!isSupabaseConfigured){setLoading(false);return;}
+  supabase.auth.getSession().then(({data})=>{setSession(data.session);setLoading(false);});
+  const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,next)=>setSession(next));
+  return ()=>subscription.unsubscribe();
+ },[]);
+ const submit=async(e)=>{e.preventDefault();setBusy(true);setMessage("");try{
+  if(mode==="signup"){const {error}=await supabase.auth.signUp({email,password,options:{data:{full_name:fullName}}});if(error)throw error;setMessage("Account created. Check your email to confirm your address.");}
+  else if(mode==="reset"){const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin});if(error)throw error;setMessage("Password reset link sent. Check your inbox.");}
+  else {const {error}=await supabase.auth.signInWithPassword({email,password});if(error)throw error;}
+ }catch(err){setMessage(err.message||"Could not complete the request.");}finally{setBusy(false);}};
+ if(!isSupabaseConfigured)return <App/>;
+ if(loading)return <div className="auth-screen"><div className="auth-card">Loading your secure workspace…</div></div>;
+ if(session)return <><App/><button className="signout-fab" onClick={()=>supabase.auth.signOut()}>Sign out</button></>;
+ return <div className="auth-screen"><div className="auth-card"><div className="brand-mark auth-mark">A</div><div className="eyebrow">YOUR ACADEMIC WORLD, POWERED BY AI</div><h1>Academia <span>Studio.</span></h1><p className="auth-copy">Sign in to access your academic workspace and keep your work synced.</p><form onSubmit={submit}>{mode==="signup"&&<label>Full name<input required value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Your name"/></label>}<label>Email address<input required type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></label>{mode!=="reset"&&<label>Password<input required minLength="8" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters"/></label>}<button className="primary-btn" disabled={busy}>{busy?"Please wait…":mode==="signup"?"Create account":mode==="reset"?"Send reset link":"Sign in"}</button></form>{message&&<div className="auth-message">{message}</div>}<div className="auth-links">{mode==="signin"?<><button onClick={()=>setMode("signup")}>Create an account</button><button onClick={()=>setMode("reset")}>Forgot password?</button></>:<button onClick={()=>{setMode("signin");setMessage("");}}>Back to sign in</button>}</div><small>Created & Developed By Sirajul Islam</small></div></div>;
+}
+
+createRoot(document.getElementById("root")).render(<AuthGate/>);
