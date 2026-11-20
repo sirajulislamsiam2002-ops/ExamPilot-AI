@@ -315,9 +315,11 @@ for each row execute function public.guard_exam_attempt_insert();
 
 create or replace function public.guard_exam_attempt_updates()
 returns trigger language plpgsql security definer set search_path = public
-as $$
+as $
 declare v_exam public.classroom_exams%rowtype;
 begin
+  -- Only the trusted SECURITY DEFINER RPCs set this transaction-local flag.
+  if current_setting('app.exam_rpc',true) = 'true' then return new; end if;
   if auth.uid() = old.student_id and not public.is_admin() then
     if new.student_id is distinct from old.student_id
       or new.exam_id is distinct from old.exam_id
