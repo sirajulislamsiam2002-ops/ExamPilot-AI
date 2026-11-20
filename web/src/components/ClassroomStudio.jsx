@@ -90,7 +90,16 @@ export default function ClassroomStudio({ onNotify }) {
     try{await navigator.clipboard.writeText(link);onNotify("Invitation link copied.");}catch{setInvite(link);onNotify("Invitation link is shown below.");}
     setInvite(link);
   };
-  useEffect(()=>{if(!selectedExamId){setQuestions([]);return;}supabase.from("exam_questions").select("id,question_order,question_type,prompt,options,marks").eq("exam_id",selectedExamId).order("question_order").then(({data})=>setQuestions(data||[]));},[selectedExamId]);\n  const createQuestion=async(e)=>{\n    e.preventDefault();if(!selectedExamId||!questionPrompt.trim())return;\n    const options=questionType==="mcq"?questionOptions.split("\\n").map(x=>x.trim()).filter(Boolean):[];\n    if(questionType==="mcq"&&options.length<2){onNotify("Add at least two options, one per line.");return;}\n    const {data,error}=await supabase.from("exam_questions").insert({exam_id:selectedExamId,question_order:questions.length+1,question_type:questionType,prompt:questionPrompt.trim(),options,marks:1}).select().single();\n    if(error){onNotify(error.message);return;}\n    if(correctAnswer.trim()){const {error:keyError}=await supabase.from("exam_answer_keys").insert({question_id:data.id,answer_key:{answer:correctAnswer.trim()}});if(keyError){onNotify("Question saved, but answer key could not be saved: "+keyError.message);}}\n    setQuestions(prev=>[...prev,data]);setQuestionPrompt("");setQuestionOptions("");setCorrectAnswer("");onNotify("Question added to exam.");\n  };\n  const createExam=async(e)=>{
+  useEffect(()=>{if(!selectedExamId){setQuestions([]);return;}supabase.from("exam_questions").select("id,question_order,question_type,prompt,options,marks").eq("exam_id",selectedExamId).order("question_order").then(({data})=>setQuestions(data||[]));},[selectedExamId]);
+  const createQuestion=async(e)=>{
+    e.preventDefault();if(!selectedExamId||!questionPrompt.trim())return;
+    const options=questionType==="mcq"?questionOptions.split("\n").map(x=>x.trim()).filter(Boolean):[];
+    if(questionType==="mcq"&&options.length<2){onNotify("Add at least two options, one per line.");return;}
+    const {data,error}=await supabase.from("exam_questions").insert({exam_id:selectedExamId,question_order:questions.length+1,question_type:questionType,prompt:questionPrompt.trim(),options,marks:1}).select().single();
+    if(error){onNotify(error.message);return;}
+    if(correctAnswer.trim()){const {error:keyError}=await supabase.from("exam_answer_keys").insert({question_id:data.id,answer_key:{answer:correctAnswer.trim()}});if(keyError){onNotify("Question saved, but answer key could not be saved: "+keyError.message);}}
+    setQuestions(prev=>[...prev,data]);setQuestionPrompt("");setQuestionOptions("");setCorrectAnswer("");onNotify("Question added to exam.");
+  };\n  const createExam=async(e)=>{
     e.preventDefault();if(!selected||!examTitle.trim())return;
     const classroom=classrooms.find(c=>c.id===selected);
     const {data,error}=await supabase.from("classroom_exams").insert({classroom_id:selected,teacher_id:user.id,title:examTitle.trim(),duration_minutes:Number(duration),status:"draft"}).select().single();
