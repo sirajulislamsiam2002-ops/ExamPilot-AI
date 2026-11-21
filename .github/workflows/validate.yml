@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, feature/academia-studio-supabase-app, feature/cloudflare-web-build]
+    branches: [main, feature/academia-studio-supabase-app, feature/cloudflare-web-build, feature/student-portal-upgrade-2026-11-21]
 permissions:
   contents: read
 jobs:
