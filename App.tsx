@@ -62,3 +62,5 @@ const s=StyleSheet.create({
  field:{backgroundColor:"#F8F9FD",borderWidth:1,borderColor:"#E1E5F0",borderRadius:13,paddingHorizontal:15,paddingVertical:14,fontSize:16,color:C.text,marginTop:10,marginBottom:5,minHeight:50},button:{backgroundColor:C.purple,borderRadius:13,paddingVertical:15,paddingHorizontal:18,alignItems:"center",marginTop:12,shadowColor:C.purple,shadowOpacity:.14,shadowRadius:8,elevation:2},buttonText:{fontSize:15,color:"#fff",fontWeight:"900"},empty:{fontSize:14,color:C.muted,textAlign:"center",padding:24,backgroundColor:C.white,borderRadius:16,borderWidth:1,borderColor:C.line},option:{padding:14,borderWidth:1,borderColor:C.line,borderRadius:12,marginTop:9,backgroundColor:"#FAFBFE"},optionSelected:{borderColor:C.purple,backgroundColor:C.pale},
  nav:{minHeight:74,backgroundColor:C.white,borderTopWidth:1,borderTopColor:C.line,flexDirection:"row",justifyContent:"space-around",alignItems:"center",paddingHorizontal:8,paddingVertical:8},navItem:{flex:1,alignItems:"center",gap:4,paddingVertical:7},navIcon:{fontSize:23},navLabel:{fontSize:12,fontWeight:"900"}
 });
+
+export default App;
