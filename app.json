@@ -7,7 +7,8 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/academia-mark.svg"
     },
     "android": {
       "package": "com.sirajulislam.academiastudio",
